@@ -1,0 +1,19 @@
+[package]
+name = "chaline-websocket"
+version = "0.1.0"
+edition = "2021"
+
+#[dependencies]
+#tokio = { version = "1", features = ["full"] }
+#futures-util = { version = "0.3.28", default-features = false, features = ["sink", "std"] }
+#tungstenite = "0.24.0"
+#tokio-tungstenite = "*"
+#futures-channel = "0.3.28"
+
+[dependencies]
+tokio = { version = "1.47", features = ["full"] }
+futures-util = { version = "0.3.28", default-features = false, features = ["sink", "std"] }
+tokio-tungstenite = "0.18"
+tokio-rustls = "0.23"
+rustls-pemfile = "1.0"
+futures = "0.3"
