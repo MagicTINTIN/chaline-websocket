@@ -12,7 +12,7 @@ pub fn load_config() -> Result<()> {
     //             "+44 2345678"
     //         ]
     //     }"#;
-
+    
     let json_data = fs::read_to_string("data.json").unwrap();
 
     // Parse the string of data into serde_json::Value.

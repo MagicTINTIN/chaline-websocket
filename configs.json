@@ -1,0 +1,7 @@
+{
+    "name": "Chaline configuration",
+    "rooms": [
+        "/home/user/Documents/code/rust/chaline-websocket/micasend-ws.json",
+        "/home/user/Documents/code/rust/chaline-websocket/nokertu-ws.json"
+    ]
+}
