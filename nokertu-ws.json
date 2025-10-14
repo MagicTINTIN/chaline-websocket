@@ -1,0 +1,6 @@
+{
+    "name":"Nokertu",
+    "type":"group",
+    "prefix":"nokertu",
+    "fetchURL":"localhost/nokertu/www/api/ws/games?id="
+}
