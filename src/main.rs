@@ -1,28 +1,44 @@
 use anyhow::Context;
+use config_loader::RoomConfig;
 use futures::{SinkExt, StreamExt};
-use tokio_tungstenite::tungstenite::protocol::Message;
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer,pem::PemObject};
+use tokio_rustls::rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::accept_async;
+use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info, trace};
 
 mod config_loader;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    let ssl_disabled = args.contains(&"--no-ssl".to_string());
+    if ssl_disabled {
+        todo!("Version without SSL not implemented yet!");
+    }
+
     tracing::subscriber::set_global_default(tracing_subscriber::fmt::Subscriber::new()).unwrap();
     let habile = config_loader::load_configs().unwrap_or(vec![]);
     // println!("{}",habile);
+    let mut mut_conf_vec = Vec::with_capacity(habile.len());
     for i in 0..habile.len() {
         println!("> {}", habile[i]);
+        mut_conf_vec.push(config_loader::load_room_config(&habile[i]).unwrap());
     }
-    let args: Vec<String> = std::env::args().collect();
-    let ssl_disabled = args.contains(&"--no-ssl".to_string());
-    if !ssl_disabled {}
+
+
+    // let conf_vec: Arc<Vec<RoomConfig>> = Arc::new(mut_conf_vec);
+    let conf_vec: Arc<[RoomConfig]> = Arc::from(mut_conf_vec.into_boxed_slice());
+
+    // let s = conf_vec.clone();
+    for i in 0..conf_vec.len() {
+        println!("[{}]={}", &conf_vec[i].prefix, &conf_vec[i].kind);
+    }
+
     // Works only for one certificate
     let cert =
         CertificateDer::from_pem_file("/etc/ssl/private/mtc").context("no certificate found")?;
@@ -94,11 +110,8 @@ async fn main() -> anyhow::Result<()> {
                         // Broadcast to all clients
                         let clients_guard = clients.lock().unwrap();
                         for client in clients_guard.iter() {
-                            let _ = client.send(
-                                Message::Text(
-                                    "new message notification".to_string().into(),
-                                ),
-                            );
+                            let _ = client
+                                .send(Message::Text("new message notification".to_string().into()));
                         }
                     }
                 }
