@@ -11,17 +11,20 @@ use tokio_rustls::rustls::{
 };
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::accept_async;
+use tracing::{error, info, trace};
 
 mod configload;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing::subscriber::set_global_default(tracing_fmt::FmtSubscriber::new()).unwrap();
     let _ = load_config();
     let args: Vec<String> = std::env::args().collect();
     let ssl_disabled = args.contains(&"--no-ssl".to_string());
     if !ssl_disabled {}
     // Works only for one certificate
-    let cert = CertificateDer::from_pem_file("/etc/ssl/private/mtc").context("no certificate found")?;
+    let cert =
+        CertificateDer::from_pem_file("/etc/ssl/private/mtc").context("no certificate found")?;
     let key = PrivateKeyDer::from_pem_file("/etc/ssl/private/mtk").context("no key found")?;
 
     // TLS server
@@ -46,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
             let tls_stream = match acceptor.accept(stream).await {
                 Ok(tls_stream) => tls_stream,
                 Err(err) => {
-                    eprintln!("TLS handshake failed: {}", err);
+                    error!("TLS handshake failed: {}", err);
                     return;
                 }
             };
@@ -55,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
             let ws_stream = match accept_async(tls_stream).await {
                 Ok(ws) => ws,
                 Err(err) => {
-                    eprintln!("WebSocket handshake failed: {}", err);
+                    error!("WebSocket handshake failed: {}", err);
                     return;
                 }
             };
@@ -83,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
             // receiving messages from the client
             while let Some(Ok(msg)) = read.next().await {
                 if let tokio_tungstenite::tungstenite::protocol::Message::Text(txt) = msg {
-                    println!("Received: {}", txt);
+                    trace!("Received: {}", txt);
                     if txt.contains("new micasend message") {
                         println!("Broadcasting ping");
 
@@ -93,14 +96,14 @@ async fn main() -> anyhow::Result<()> {
                             let _ = client.send(
                                 tokio_tungstenite::tungstenite::protocol::Message::Text(
                                     "new message notification".to_string().into(),
-                                )
+                                ),
                             );
                         }
                     }
                 }
             }
 
-            println!("Socket connection ended");
+            info!("Socket connection ended");
 
             // remove the client from the shared list
             {
