@@ -1,13 +1,11 @@
 use anyhow::Context;
 use futures::{SinkExt, StreamExt};
+use tokio_tungstenite::tungstenite::protocol::Message;
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tokio_rustls::rustls::pki_types::pem::PemObject;
-use tokio_rustls::rustls::{
-    pki_types::{CertificateDer, PrivateKeyDer},
-    ServerConfig,
-};
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer,pem::PemObject};
+use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::accept_async;
 use tracing::{error, info, trace};
@@ -16,9 +14,12 @@ mod config_loader;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing::subscriber::set_global_default(tracing_fmt::FmtSubscriber::new()).unwrap();
-    let habile = config_loader::load_configs();
-    debug!(habile);
+    tracing::subscriber::set_global_default(tracing_subscriber::fmt::Subscriber::new()).unwrap();
+    let habile = config_loader::load_configs().unwrap_or(vec![]);
+    // println!("{}",habile);
+    for i in 0..habile.len() {
+        println!("> {}", habile[i]);
+    }
     let args: Vec<String> = std::env::args().collect();
     let ssl_disabled = args.contains(&"--no-ssl".to_string());
     if !ssl_disabled {}
@@ -85,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
 
             // receiving messages from the client
             while let Some(Ok(msg)) = read.next().await {
-                if let tokio_tungstenite::tungstenite::protocol::Message::Text(txt) = msg {
+                if let Message::Text(txt) = msg {
                     trace!("Received: {}", txt);
                     if txt.contains("new micasend message") {
                         println!("Broadcasting ping");
@@ -94,7 +95,7 @@ async fn main() -> anyhow::Result<()> {
                         let clients_guard = clients.lock().unwrap();
                         for client in clients_guard.iter() {
                             let _ = client.send(
-                                tokio_tungstenite::tungstenite::protocol::Message::Text(
+                                Message::Text(
                                     "new message notification".to_string().into(),
                                 ),
                             );
