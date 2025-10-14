@@ -1,40 +1,33 @@
+use anyhow::Context;
 use configload::load_config;
 use futures::{SinkExt, StreamExt};
-use std::env;
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
+use tokio_rustls::rustls::pki_types::pem::PemObject;
+use tokio_rustls::rustls::{
+    pki_types::{CertificateDer, PrivateKeyDer},
+    ServerConfig,
+};
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::accept_async;
-use rustls_pemfile::{certs, pkcs8_private_keys};
-use std::fs::File;
-use std::io::BufReader;
 
 mod configload;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     let _ = load_config();
-    let args: Vec<String> = env::args().collect();
+    let args: Vec<String> = std::env::args().collect();
     let ssl_disabled = args.contains(&"--no-ssl".to_string());
     if !ssl_disabled {}
-    let cert_file = &mut BufReader::new(File::open("/etc/ssl/private/mtc")?);
-    let key_file = &mut BufReader::new(File::open("/etc/ssl/private/mtk")?);
-    let cert_chain = certs(cert_file)?
-        .into_iter()
-        .map(Certificate)
-        .collect();
-    let mut keys = pkcs8_private_keys(key_file)?;
-    if keys.is_empty() {
-        return Err("No private key found".into());
-    }
+    // Works only for one certificate
+    let cert = CertificateDer::from_pem_file("/etc/ssl/private/mtc").context("no certificate found")?;
+    let key = PrivateKeyDer::from_pem_file("/etc/ssl/private/mtk").context("no key found")?;
 
     // TLS server
     let config = ServerConfig::builder()
-        .with_safe_defaults()
         .with_no_client_auth()
-        .with_single_cert(cert_chain, PrivateKey(keys.remove(0)))?;
+        .with_single_cert(vec![cert], key)?;
     let acceptor = TlsAcceptor::from(Arc::new(config));
 
     // shared list of clients
@@ -97,9 +90,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Broadcast to all clients
                         let clients_guard = clients.lock().unwrap();
                         for client in clients_guard.iter() {
-                            let _ = client.send(tokio_tungstenite::tungstenite::protocol::Message::Text(
-                                "new message notification".to_string(),
-                            ));
+                            let _ = client.send(
+                                tokio_tungstenite::tungstenite::protocol::Message::Text(
+                                    "new message notification".to_string().into(),
+                                )
+                            );
                         }
                     }
                 }
@@ -120,4 +115,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
