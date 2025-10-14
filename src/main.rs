@@ -1,3 +1,4 @@
+use configload::load_config;
 use futures::{SinkExt, StreamExt};
 use std::env;
 use std::sync::{Arc, Mutex};
@@ -10,8 +11,11 @@ use rustls_pemfile::{certs, pkcs8_private_keys};
 use std::fs::File;
 use std::io::BufReader;
 
+mod configload;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = load_config();
     let args: Vec<String> = env::args().collect();
     let ssl_disabled = args.contains(&"--no-ssl".to_string());
     if !ssl_disabled {}
