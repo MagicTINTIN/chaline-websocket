@@ -1,4 +1,5 @@
 use anyhow::Context;
+use configload::load_config;
 use futures::{SinkExt, StreamExt};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
@@ -11,8 +12,11 @@ use tokio_rustls::rustls::{
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::accept_async;
 
+mod configload;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let _ = load_config();
     let args: Vec<String> = std::env::args().collect();
     let ssl_disabled = args.contains(&"--no-ssl".to_string());
     if !ssl_disabled {}
