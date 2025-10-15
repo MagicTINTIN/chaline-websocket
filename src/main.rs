@@ -2,6 +2,7 @@ use anyhow::Context;
 use config_loader::RoomConfig;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -12,13 +13,24 @@ use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info, trace};
 
+
 mod config_loader;
+mod handler;
 mod com;
 
-struct ClientRoom {
-    c: mpsc::UnboundedSender<Message>,
-    prefix: String,
+static GLOBAL_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn get_new_client_id() -> u64 {
+    // fetch_add provides atomic increment. No `unsafe` needed.
+    // Ordering specifies memory ordering constraints for concurrent access.
+    GLOBAL_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
+
+// fn get_global_counter() -> u64 {
+//     // load provides atomic read. No `unsafe` needed.
+//     GLOBAL_COUNTER.load(Ordering::SeqCst)
+// }
+
 
 static ROOM_CONFIGS: OnceLock<HashMap<String, RoomConfig>> = OnceLock::new();
 
@@ -103,8 +115,9 @@ async fn main() -> anyhow::Result<()> {
             let (tx, mut rx) = mpsc::unbounded_channel();
             {
                 let mut clients_guard = clients.lock().unwrap();
-                clients_guard.push(ClientRoom {
+                clients_guard.push(com::ClientRoom {
                     c: tx,
+                    global_id: get_new_client_id(),
                     prefix: String::from(""),
                 });
             }

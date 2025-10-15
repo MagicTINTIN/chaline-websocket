@@ -2,6 +2,7 @@ use serde_json::Value;
 use std::{fmt, fs};
 use tracing::{error, info};
 
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum RoomKind {
     Broadcast,
     Group(String),
@@ -18,6 +19,7 @@ impl fmt::Display for RoomKind {
     }
 }
 
+#[derive(Clone)]
 pub struct RoomConfig {
     pub prefix: String,
     pub kind: RoomKind,
