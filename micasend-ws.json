@@ -1,5 +1,6 @@
 {
     "name":"MicaSend",
     "type":"broadcast",
-    "prefix":"micasend"
+    "prefix":"micasend",
+    "authorized": ["ping"]
 }

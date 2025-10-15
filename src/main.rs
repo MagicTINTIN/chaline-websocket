@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
 
     // let s = conf_vec.clone();
     for i in 0..conf_vec.len() {
-        println!("[{}]={}", &conf_vec[i].prefix, &conf_vec[i].kind);
+        println!("[{}]={}: {} messages authorized", &conf_vec[i].prefix, &conf_vec[i].kind, &conf_vec[i].authorized_messages.len());
     }
 
     // Works only for one certificate

@@ -13,30 +13,33 @@ configs.json
 ```
 
 Each room configuration is defined like this
-- Broadcast mode
+- Broadcast mode with only one message authorized
 ```json
 {
     "name":"MicaSend",
     "type":"broadcast",
-    "prefix":"micasend"
+    "prefix":"micasend",
+    "authorized": ["ping"]
 }
 ```
-- Groups mode
+- Groups mode with some messages authorized
 ```json
 {
     "name":"Clavardons",
     "type":"group",
     "prefix":"clavardons",
-    "fetchURL":"clavardons.magictintin.fr/api/ws/group?id="
+    "fetchURL":"clavardons.magictintin.fr/api/ws/group?id=",
+    "authorized": ["join","leave"]
 }
 ```
-- Individual mode
+- Individual mode with all messages allowed
 ```json
 {
     "name":"JIRSend",
     "type":"individual",
     "prefix":"jirsend",
-    "fetchURL":"jirsend.magictintin.fr/api/ws/user?id="
+    "fetchURL":"jirsend.magictintin.fr/api/ws/user?id=",
+    "authorized": ["ping"]
 
 }
 ```

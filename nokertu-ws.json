@@ -2,5 +2,6 @@
     "name":"Nokertu",
     "type":"group",
     "prefix":"nokertu",
-    "fetchURL":"localhost/nokertu/www/api/ws/games?id="
+    "fetchURL":"localhost/nokertu/www/api/ws/games?id=",
+    "authorized": ["member","game","turn","action"]
 }
