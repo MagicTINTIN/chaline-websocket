@@ -29,6 +29,10 @@ in
       glibc.dev
       rustfmt
       clippy
+
+      openssl
+
+      pkg-config
     ];
     RUSTC_VERSION = overrides.toolchain.channel;
     NIX_ENFORCE_PURITY=0;
