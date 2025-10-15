@@ -1,7 +1,8 @@
 use anyhow::Context;
 use config_loader::RoomConfig;
 use futures::{SinkExt, StreamExt};
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio_rustls::rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
@@ -13,6 +14,29 @@ use tracing::{error, info, trace};
 
 mod config_loader;
 
+static ROOM_CONFIGS: OnceLock<HashMap<String, RoomConfig>> = OnceLock::new();
+
+fn get_rooms() -> &'static HashMap<String, RoomConfig> {
+    ROOM_CONFIGS.get_or_init(|| -> HashMap<String, RoomConfig> {
+        let mut m = HashMap::new();
+        let habile = config_loader::load_configs().unwrap_or(vec![]);
+        for i in 0..habile.len() {
+            println!("> {}", habile[i]);
+            let rc = config_loader::load_room_config(&habile[i]).unwrap();
+
+            println!(
+                "[{}]={}: {} messages authorized",
+                &rc.prefix,
+                &rc.kind,
+                &rc.authorized_messages.len()
+            );
+            // mut_conf_vec.push(rc);
+            m.insert(rc.prefix.clone(), rc);
+        }
+        m
+    })
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -22,23 +46,20 @@ async fn main() -> anyhow::Result<()> {
     }
 
     tracing::subscriber::set_global_default(tracing_subscriber::fmt::Subscriber::new()).unwrap();
-    let habile = config_loader::load_configs().unwrap_or(vec![]);
-    // println!("{}",habile);
-    let mut mut_conf_vec = Vec::with_capacity(habile.len());
-    for i in 0..habile.len() {
-        println!("> {}", habile[i]);
-        mut_conf_vec.push(config_loader::load_room_config(&habile[i]).unwrap());
-    }
-
+    // for i in 0..habile.len() {
+    //     println!("> {}", habile[i]);
+    //     let rc = config_loader::load_room_config(&habile[i]).unwrap();
+    //     // mut_conf_vec.push(rc);
+    //     mut_conf_hmap.insert(rc.prefix.clone(), rc);
+    // }
 
     // let conf_vec: Arc<Vec<RoomConfig>> = Arc::new(mut_conf_vec);
-    let conf_vec: Arc<[RoomConfig]> = Arc::from(mut_conf_vec.into_boxed_slice());
+    // let conf_vec: Arc<[RoomConfig]> = Arc::from(mut_conf_vec.into_boxed_slice());
 
     // let s = conf_vec.clone();
-    for i in 0..conf_vec.len() {
-        println!("[{}]={}: {} messages authorized", &conf_vec[i].prefix, &conf_vec[i].kind, &conf_vec[i].authorized_messages.len());
-    }
-
+    // for i in 0..conf_vec.len() {
+    //     println!("[{}]={}: {} messages authorized", &conf_vec[i].prefix, &conf_vec[i].kind, &conf_vec[i].authorized_messages.len());
+    // }
     // Works only for one certificate
     let cert =
         CertificateDer::from_pem_file("/etc/ssl/private/mtc").context("no certificate found")?;
@@ -80,6 +101,8 @@ async fn main() -> anyhow::Result<()> {
                 }
             };
             println!("New WebSocket connection established");
+
+            let _room_map = get_rooms();
 
             // Split the WebSocket stream into read and write halves
             let (mut write, mut read) = ws_stream.split();
