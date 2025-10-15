@@ -3,8 +3,65 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-use crate::config_loader::{RoomConfig, RoomKind};
+use crate::config_loader::{self, RoomConfig, RoomKind};
 use tracing::{info, warn};
+
+#[derive(Clone)]
+pub struct RoomGroup {
+    pub full_roomgroup: String,
+    pub room: String,
+    pub group: Option<String>,
+    pub fetchURL: Option<String>
+}
+
+pub struct SplittedMessage {
+    // prefix: String,
+    pub content: String,
+    pub room_group: RoomGroup,
+}
+
+pub fn str_to_roomgroup(confs: &HashMap<String, RoomConfig>, str: String) -> Option<RoomGroup> {
+    let name_parts = str.split("/").collect::<Vec<_>>();
+
+    if name_parts.len() > 2 {
+        warn!("{} is not a valid room/group name", str);
+        return None;
+    }
+    if name_parts.len() < 2
+        && !confs.contains_key(&str)
+        && confs.get(&str).unwrap().kind != RoomKind::Broadcast
+    {
+        warn!("{} is not a valid room name / not a broadcast room", str);
+        return None;
+    }
+
+    let conf = confs.get(name_parts[0]);
+    if conf.is_none() {
+        warn!("{} is not a valid room", str);
+        return None;
+    }
+
+    match conf.unwrap().kind.clone() {
+        RoomKind::Broadcast => Some(RoomGroup {
+            full_roomgroup: name_parts[0].to_string(),
+            room: name_parts[0].to_string(),
+            group: None,
+            fetchURL: None,
+        }),
+        RoomKind::Group(url)=> Some(RoomGroup {
+            full_roomgroup: name_parts[0].to_string() + &"/".to_string() + &name_parts[1].to_string(),
+            room: name_parts[0].to_string(),
+            group: Some(name_parts[1].to_string()),
+            fetchURL: Some(url)
+        }),
+        RoomKind::Individual(url)=> Some(RoomGroup {
+            full_roomgroup: name_parts[0].to_string() + &"/".to_string() + &name_parts[1].to_string(),
+            room: name_parts[0].to_string(),
+            group: Some(name_parts[1].to_string()),
+            fetchURL: Some(url)
+        }),
+    }
+}
 
 #[derive(Clone)]
 pub struct ClientRoom {
@@ -22,8 +79,8 @@ pub struct ServerRoom {
 pub type ServerMap = HashMap<String, ServerRoom>;
 pub type SharedServerMap = Arc<Mutex<ServerMap>>;
 
-fn does_room_group_exists(url: &String) -> bool {
-    if let Ok(response) = reqwest::blocking::get(url) {
+fn does_room_group_exists(url: &String, group: &String) -> bool {
+    if let Ok(response) = reqwest::blocking::get(url.to_owned() + group) {
         if response.status().is_success() {
             if let Ok(text) = response.text() {
                 return text.trim().contains("yes");
@@ -35,56 +92,37 @@ fn does_room_group_exists(url: &String) -> bool {
 
 pub async fn add_client(
     map: SharedServerMap,
-    confs: &HashMap<String, RoomConfig>,
-    room_group_name: String,
+    // confs: &HashMap<String, RoomConfig>,
+    conf: RoomConfig,
+    rg: RoomGroup,
     client: ClientRoom,
 ) {
-    let name_parts = room_group_name.split("/").collect::<Vec<_>>();
-
-    if name_parts.len() > 2 {
-        warn!("{} is not a valid room/group name", room_group_name);
-        return;
-    }
-    if name_parts.len() < 2
-        && !confs.contains_key(&room_group_name)
-        && confs.get(&room_group_name).unwrap().kind != RoomKind::Broadcast
-    {
-        warn!(
-            "{} is not a valid room name / not a broadcast room",
-            room_group_name
-        );
-        return;
-    }
-
-    let conf = confs.get(name_parts[0]);
-    if conf.is_none() {
-        warn!("{} is not a valid room", room_group_name);
-        return;
-    }
-
     let mut guard = map.lock().await;
-    if let Some(rg_name) = guard.get_mut(&room_group_name) {
+    if let Some(rg_name) = guard.get_mut(&rg.full_roomgroup) {
         rg_name.clients.push(client.clone());
         info!(
             "New client ({}) added to {}",
-            client.global_id, room_group_name
+            client.global_id, rg.full_roomgroup
         );
-    } else if does_room_group_exists(&room_group_name) {
+    } else if conf.kind == config_loader::RoomKind::Broadcast || does_room_group_exists(
+        &rg.fetchURL.unwrap(),
+        &rg.group.unwrap(),
+    ) {
         guard.insert(
-            room_group_name.clone(),
+            rg.full_roomgroup.clone(),
             ServerRoom {
                 clients: vec![client.clone()],
-                config: conf.unwrap().clone(),
+                config: conf,
             },
         );
         info!(
             "Client ({}) added to {} (new group)",
-            client.global_id, room_group_name
+            client.global_id, &rg.full_roomgroup
         );
     } else {
         warn!(
             "Client ({}) can't be added to {} (invalid group)",
-            client.global_id, room_group_name
+            client.global_id, &rg.full_roomgroup
         );
     }
     // guard released at end of scope
