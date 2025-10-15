@@ -5,12 +5,12 @@ use crate::config_loader::RoomConfig;
 pub struct SplittedMessage {
     // prefix: String,
     content: String,
-    room: RoomConfig,
+    room_name: String,
     id: Option<String>,
 }
 
 fn split_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<SplittedMessage> {
-    let parts = msg.split(":").collect::<Vec<_>>();
+    let parts = msg.splitn(3, ":").collect::<Vec<_>>();
 
     if parts.len() < 2 {
         return None;
@@ -20,7 +20,11 @@ fn split_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<Spl
         return None;
     }
 
-    None
+    if parts.len() == 2 {
+        Some(SplittedMessage{content: parts[1].to_string(), room_name: parts[0].to_string(), id: None})
+    } else {
+        Some(SplittedMessage{content: parts[1].to_string(), room_name: parts[0].to_string(), id: Some(parts[2].to_string())})
+    }
 }
 
 pub struct WebSocketAction {
