@@ -13,6 +13,12 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info, trace};
 
 mod config_loader;
+mod com;
+
+struct ClientRoom {
+    c: mpsc::UnboundedSender<Message>,
+    prefix: String,
+}
 
 static ROOM_CONFIGS: OnceLock<HashMap<String, RoomConfig>> = OnceLock::new();
 
@@ -20,9 +26,9 @@ fn get_rooms() -> &'static HashMap<String, RoomConfig> {
     ROOM_CONFIGS.get_or_init(|| -> HashMap<String, RoomConfig> {
         let mut m = HashMap::new();
         let habile = config_loader::load_configs().unwrap_or(vec![]);
-        for i in 0..habile.len() {
-            println!("> {}", habile[i]);
-            let rc = config_loader::load_room_config(&habile[i]).unwrap();
+        for e in habile.into_iter() {
+            println!("> {}", &e);
+            let rc = config_loader::load_room_config(&e).unwrap();
 
             println!(
                 "[{}]={}: {} messages authorized",
@@ -46,20 +52,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     tracing::subscriber::set_global_default(tracing_subscriber::fmt::Subscriber::new()).unwrap();
-    // for i in 0..habile.len() {
-    //     println!("> {}", habile[i]);
-    //     let rc = config_loader::load_room_config(&habile[i]).unwrap();
-    //     // mut_conf_vec.push(rc);
-    //     mut_conf_hmap.insert(rc.prefix.clone(), rc);
-    // }
-
-    // let conf_vec: Arc<Vec<RoomConfig>> = Arc::new(mut_conf_vec);
-    // let conf_vec: Arc<[RoomConfig]> = Arc::from(mut_conf_vec.into_boxed_slice());
-
-    // let s = conf_vec.clone();
-    // for i in 0..conf_vec.len() {
-    //     println!("[{}]={}: {} messages authorized", &conf_vec[i].prefix, &conf_vec[i].kind, &conf_vec[i].authorized_messages.len());
-    // }
     // Works only for one certificate
     let cert =
         CertificateDer::from_pem_file("/etc/ssl/private/mtc").context("no certificate found")?;
@@ -111,7 +103,10 @@ async fn main() -> anyhow::Result<()> {
             let (tx, mut rx) = mpsc::unbounded_channel();
             {
                 let mut clients_guard = clients.lock().unwrap();
-                clients_guard.push(tx);
+                clients_guard.push(ClientRoom {
+                    c: tx,
+                    prefix: String::from(""),
+                });
             }
 
             // sending messages to the client
@@ -133,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
                         // Broadcast to all clients
                         let clients_guard = clients.lock().unwrap();
                         for client in clients_guard.iter() {
-                            let _ = client
+                            let _ = client.c
                                 .send(Message::Text("new message notification".to_string().into()));
                         }
                     }
@@ -145,7 +140,7 @@ async fn main() -> anyhow::Result<()> {
             // remove the client from the shared list
             {
                 let mut clients_guard = clients.lock().unwrap();
-                clients_guard.retain(|client| !client.is_closed());
+                clients_guard.retain(|client| !client.c.is_closed());
             }
 
             // wait for the send task to finish

@@ -29,17 +29,15 @@ Each room configuration is defined like this
     "type":"group",
     "prefix":"clavardons",
     "fetchURL":"clavardons.magictintin.fr/api/ws/group?id=",
-    "authorized": ["join","leave"]
+    "authorized": ["join", "leave"]
 }
 ```
-- Individual mode with all messages allowed
+- **NOT IMPLEMENTED YET** *~~Individual mode~~* with all messages allowed ("authorized": [])
 ```json
 {
     "name":"JIRSend",
     "type":"individual",
     "prefix":"jirsend",
-    "fetchURL":"jirsend.magictintin.fr/api/ws/user?id=",
-    "authorized": ["ping"]
-
+    "fetchURL":"jirsend.magictintin.fr/api/ws/user?id="
 }
 ```
