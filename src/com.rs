@@ -111,13 +111,18 @@ fn does_room_group_exists(url: &String, group: &String) -> bool {
 }
 
 pub fn add_client(
-    map: SharedM<ServerMap>,
+    smap: SharedM<ServerMap>,
+    cmap: SharedM<ClientMap>,
     // confs: &HashMap<String, RoomConfig>,
     conf: RoomConfig,
     rg: RoomGroup,
     client: ClientRoom,
 ) {
-    let mut guard = map.lock().unwrap();
+    {
+        let mut guard = cmap.lock().unwrap();
+        guard.insert(client.global_id, vec![]);
+    }
+    let mut guard = smap.lock().unwrap();
     if let Some(rg_name) = guard.get_mut(&rg.full_roomgroup) {
         rg_name.clients.push(client.clone());
         info!(
@@ -148,7 +153,7 @@ pub fn add_client(
             "Client ({}) added to {} (new group)",
             client.global_id, &rg.full_roomgroup
         );
-    // guard released at end of scope
+        // guard released at end of scope
     } else {
         warn!(
             "Client ({}) can't be added to {} (invalid group)",
@@ -157,14 +162,19 @@ pub fn add_client(
     }
 }
 
-pub fn rm_client(map: SharedM<ServerMap>, id: u64) {
-    let mut guard = map.lock().unwrap();
-
-    // for each room, remove clients with `global_id == id`, then remove empty rooms.
-    guard.retain(|_room_name, server_room| {
-        server_room.clients.retain(|c| c.global_id != id);
-        !server_room.clients.is_empty()
-    });
+pub fn rm_client(smap: SharedM<ServerMap>, cmap: SharedM<ClientMap>, id: u64) {
+    {
+        let mut guard = cmap.lock().unwrap();
+        guard.remove(&id);
+    }
+    {
+        let mut guard = smap.lock().unwrap();
+        // for each room, remove clients with `global_id == id`, then remove empty rooms.
+        guard.retain(|_room_name, server_room| {
+            server_room.clients.retain(|c| c.global_id != id);
+            !server_room.clients.is_empty()
+        });
+    }
 }
 
 pub fn broadcast_to_group(map: SharedM<ServerMap>, group: &str, msg: Message) {
