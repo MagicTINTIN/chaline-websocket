@@ -1,4 +1,5 @@
 use anyhow::Context;
+use com::{ClientMap, ServerMap, SharedM};
 use config_loader::RoomConfig;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
@@ -13,10 +14,9 @@ use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info, trace};
 
-
+mod com;
 mod config_loader;
 mod handler;
-mod com;
 
 static GLOBAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -30,7 +30,6 @@ fn get_new_client_id() -> u64 {
 //     // load provides atomic read. No `unsafe` needed.
 //     GLOBAL_COUNTER.load(Ordering::SeqCst)
 // }
-
 
 static ROOM_CONFIGS: OnceLock<HashMap<String, RoomConfig>> = OnceLock::new();
 
@@ -76,7 +75,9 @@ async fn main() -> anyhow::Result<()> {
     let acceptor = TlsAcceptor::from(Arc::new(config));
 
     // shared list of clients
-    let clients = Arc::new(Mutex::new(Vec::new()));
+    let clients: SharedM<ClientMap> = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    let rooms: SharedM<ServerMap> = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    // let clients = Arc::new(Mutex::new(Vec::new()));
 
     // TCP listener
     let listener = TcpListener::bind("[::]:8443").await?;
@@ -104,7 +105,8 @@ async fn main() -> anyhow::Result<()> {
                     return;
                 }
             };
-            println!("New WebSocket connection established");
+            let id = get_new_client_id();
+            println!("New WebSocket connection ({}) established", id);
 
             let _room_map = get_rooms();
 
@@ -114,12 +116,15 @@ async fn main() -> anyhow::Result<()> {
             // add this client to the shared list
             let (tx, mut rx) = mpsc::unbounded_channel();
             {
-                let mut clients_guard = clients.lock().unwrap();
-                clients_guard.push(com::ClientRoom {
-                    c: tx,
-                    global_id: get_new_client_id(),
-                    prefix: String::from(""),
-                });
+                let mut clients_guard = clients.lock().await;
+                // clients_guard.insert(
+                //     id,
+                //     com::ClientRoom {
+                //         c: tx,
+                //         global_id: id,
+                //         // prefix: String::from(""),
+                //     },
+                // );
             }
 
             // sending messages to the client
@@ -141,7 +146,8 @@ async fn main() -> anyhow::Result<()> {
                         // Broadcast to all clients
                         let clients_guard = clients.lock().unwrap();
                         for client in clients_guard.iter() {
-                            let _ = client.c
+                            let _ = client
+                                .c
                                 .send(Message::Text("new message notification".to_string().into()));
                         }
                     }

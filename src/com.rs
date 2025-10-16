@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex}; //{mpsc, Mutex}
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::config_loader::{self, RoomConfig, RoomKind};
@@ -67,7 +67,7 @@ pub fn str_to_roomgroup(confs: &HashMap<String, RoomConfig>, str: String) -> Opt
 pub struct ClientRoom {
     pub c: mpsc::UnboundedSender<Message>,
     pub global_id: u64,
-    pub prefix: String,
+    // pub prefix: String,
 }
 
 #[derive(Clone)]
@@ -77,7 +77,8 @@ pub struct ServerRoom {
 }
 
 pub type ServerMap = HashMap<String, ServerRoom>;
-pub type SharedServerMap = Arc<Mutex<ServerMap>>;
+pub type ClientMap = HashMap<u64, Vec<String>>;
+pub type SharedM<T> = Arc<Mutex<T>>;
 
 fn does_room_group_exists(url: &String, group: &String) -> bool {
     if let Ok(response) = reqwest::blocking::get(url.to_owned() + group) {
@@ -91,7 +92,7 @@ fn does_room_group_exists(url: &String, group: &String) -> bool {
 }
 
 pub async fn add_client(
-    map: SharedServerMap,
+    map: SharedM<ServerMap>,
     // confs: &HashMap<String, RoomConfig>,
     conf: RoomConfig,
     rg: RoomGroup,
@@ -128,11 +129,11 @@ pub async fn add_client(
     // guard released at end of scope
 }
 
-pub fn rm_client (map: SharedServerMap, id: u64) {
+pub fn rm_client (map: SharedM<ServerMap>, id: u64) {
     
 }
 
-pub async fn broadcast_to_group(map: SharedServerMap, group: &str, msg: Message) {
+pub async fn broadcast_to_group(map: SharedM<ServerMap>, group: &str, msg: Message) {
     // hold lock while collecting clients
     let clients = {
         let guard = map.lock().await;
