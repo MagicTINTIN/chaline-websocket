@@ -1,6 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::{Arc, Mutex}};
 
-use tokio::sync::{mpsc, Mutex}; //{mpsc, Mutex}
+use tokio::sync::mpsc; //{mpsc, Mutex}
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::config_loader::{self, RoomConfig, RoomKind};
@@ -20,45 +20,57 @@ pub struct SplittedMessage {
     pub room_group: RoomGroup,
 }
 
-pub fn str_to_roomgroup(confs: &HashMap<String, RoomConfig>, str: String) -> Option<RoomGroup> {
-    let name_parts = str.split("/").collect::<Vec<_>>();
+pub fn str_to_roomgroup(confs: &HashMap<String, RoomConfig>, name: &str) -> Option<RoomGroup> {
+    let name_parts = name.split('/').collect::<Vec<_>>();
 
     if name_parts.len() > 2 {
-        warn!("{} is not a valid room/group name", str);
-        return None;
-    }
-    if name_parts.len() < 2
-        && !confs.contains_key(&str)
-        && confs.get(&str).unwrap().kind != RoomKind::Broadcast
-    {
-        warn!("{} is not a valid room name / not a broadcast room", str);
+        warn!("{} is not a valid room/group name", name);
         return None;
     }
 
-    let conf = confs.get(name_parts[0]);
-    if conf.is_none() {
-        warn!("{} is not a valid room", str);
-        return None;
+    if name_parts.len() == 1 {
+        match confs.get(name) {
+            Some(conf) if conf.kind == RoomKind::Broadcast => {
+                return Some(RoomGroup {
+                    full_roomgroup: name.to_string(),
+                    room: name.to_string(),
+                    group: None,
+                    fetchURL: None,
+                });
+            }
+            Some(_) => {
+                warn!("{} is not a broadcast room", name);
+                return None;
+            }
+            None => {
+                warn!("{} is not a valid room name", name);
+                return None;
+            }
+        }
     }
 
-    match conf.unwrap().kind.clone() {
-        RoomKind::Broadcast => Some(RoomGroup {
-            full_roomgroup: name_parts[0].to_string(),
-            room: name_parts[0].to_string(),
-            group: None,
-            fetchURL: None,
-        }),
-        RoomKind::Group(url)=> Some(RoomGroup {
-            full_roomgroup: name_parts[0].to_string() + &"/".to_string() + &name_parts[1].to_string(),
-            room: name_parts[0].to_string(),
-            group: Some(name_parts[1].to_string()),
-            fetchURL: Some(url)
-        }),
-        RoomKind::Individual(url)=> Some(RoomGroup {
-            full_roomgroup: name_parts[0].to_string() + &"/".to_string() + &name_parts[1].to_string(),
-            room: name_parts[0].to_string(),
-            group: Some(name_parts[1].to_string()),
-            fetchURL: Some(url)
+    // else len == 2
+    let room = name_parts[0];
+    let group = name_parts[1];
+
+    let conf = match confs.get(room) {
+        Some(c) => c,
+        None => {
+            warn!("{} is not a valid room", name);
+            return None;
+        }
+    };
+
+    match conf.kind.clone() {
+        RoomKind::Broadcast => {
+            warn!("{} is a broadcast room and does not accept a group suffix", room);
+            None
+        }
+        RoomKind::Group(url) | RoomKind::Individual(url) => Some(RoomGroup {
+            full_roomgroup: format!("{}/{}", room, group),
+            room: room.to_string(),
+            group: Some(group.to_string()),
+            fetchURL: Some(url),
         }),
     }
 }
@@ -91,14 +103,14 @@ fn does_room_group_exists(url: &String, group: &String) -> bool {
     false
 }
 
-pub async fn add_client(
+pub fn add_client(
     map: SharedM<ServerMap>,
     // confs: &HashMap<String, RoomConfig>,
     conf: RoomConfig,
     rg: RoomGroup,
     client: ClientRoom,
 ) {
-    let mut guard = map.lock().await;
+    let mut guard = map.lock().unwrap();
     if let Some(rg_name) = guard.get_mut(&rg.full_roomgroup) {
         rg_name.clients.push(client.clone());
         info!(
@@ -133,10 +145,10 @@ pub fn rm_client (map: SharedM<ServerMap>, id: u64) {
     
 }
 
-pub async fn broadcast_to_group(map: SharedM<ServerMap>, group: &str, msg: Message) {
+pub fn broadcast_to_group(map: SharedM<ServerMap>, group: &str, msg: Message) {
     // hold lock while collecting clients
     let clients = {
-        let guard = map.lock().await;
+        let guard = map.lock().unwrap();
         guard.get(group).cloned()
     };
 

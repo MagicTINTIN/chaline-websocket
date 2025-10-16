@@ -75,8 +75,8 @@ async fn main() -> anyhow::Result<()> {
     let acceptor = TlsAcceptor::from(Arc::new(config));
 
     // shared list of clients
-    let clients: SharedM<ClientMap> = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
-    let rooms: SharedM<ServerMap> = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    let clients: SharedM<ClientMap> = Arc::new(Mutex::new(HashMap::new())); //tokio::sync::
+    let rooms: SharedM<ServerMap> = Arc::new(Mutex::new(HashMap::new())); //tokio::sync::
     // let clients = Arc::new(Mutex::new(Vec::new()));
 
     // TCP listener
@@ -105,8 +105,8 @@ async fn main() -> anyhow::Result<()> {
                     return;
                 }
             };
-            let id = get_new_client_id();
-            println!("New WebSocket connection ({}) established", id);
+            let client_id = get_new_client_id();
+            println!("New WebSocket connection ({}) established", client_id);
 
             let _room_map = get_rooms();
 
@@ -116,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
             // add this client to the shared list
             let (tx, mut rx) = mpsc::unbounded_channel();
             {
-                let mut clients_guard = clients.lock().await;
+                // let mut clients_guard = clients.lock().await;
                 // clients_guard.insert(
                 //     id,
                 //     com::ClientRoom {
@@ -140,17 +140,17 @@ async fn main() -> anyhow::Result<()> {
             while let Some(Ok(msg)) = read.next().await {
                 if let Message::Text(txt) = msg {
                     trace!("Received: {}", txt);
-                    if txt.contains("new micasend message") {
-                        println!("Broadcasting ping");
+                    // if txt.contains("new micasend message") {
+                    //     println!("Broadcasting ping");
 
-                        // Broadcast to all clients
-                        let clients_guard = clients.lock().unwrap();
-                        for client in clients_guard.iter() {
-                            let _ = client
-                                .c
-                                .send(Message::Text("new message notification".to_string().into()));
-                        }
-                    }
+                    //     // Broadcast to all clients
+                    //     let clients_guard = clients.lock().unwrap();
+                    //     for client in clients_guard.iter() {
+                    //         let _ = client
+                    //             .c
+                    //             .send(Message::Text("new message notification".to_string().into()));
+                    //     }
+                    // }
                 }
             }
 
@@ -159,7 +159,8 @@ async fn main() -> anyhow::Result<()> {
             // remove the client from the shared list
             {
                 let mut clients_guard = clients.lock().unwrap();
-                clients_guard.retain(|client| !client.c.is_closed());
+                // clients_guard.retain(|client| !client.c.is_closed());
+                clients_guard.remove(&client_id);
             }
 
             // wait for the send task to finish
