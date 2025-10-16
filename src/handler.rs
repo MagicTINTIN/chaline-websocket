@@ -16,7 +16,7 @@ fn split_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<Spl
         return None;
     }
 
-    if let Some(rg) = str_to_roomgroup(confs, parts[0].to_string()) {
+    if let Some(rg) = str_to_roomgroup(confs, parts[0]) {
         Some(SplittedMessage {
             content: parts[1].to_string(),
             room_group: rg,

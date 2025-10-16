@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::{Arc, Mutex}};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use tokio::sync::mpsc; //{mpsc, Mutex}
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -11,7 +14,7 @@ pub struct RoomGroup {
     pub full_roomgroup: String,
     pub room: String,
     pub group: Option<String>,
-    pub fetchURL: Option<String>
+    pub fetchURL: Option<String>,
 }
 
 pub struct SplittedMessage {
@@ -63,7 +66,10 @@ pub fn str_to_roomgroup(confs: &HashMap<String, RoomConfig>, name: &str) -> Opti
 
     match conf.kind.clone() {
         RoomKind::Broadcast => {
-            warn!("{} is a broadcast room and does not accept a group suffix", room);
+            warn!(
+                "{} is a broadcast room and does not accept a group suffix",
+                room
+            );
             None
         }
         RoomKind::Group(url) | RoomKind::Individual(url) => Some(RoomGroup {
@@ -93,7 +99,8 @@ pub type ClientMap = HashMap<u64, Vec<String>>;
 pub type SharedM<T> = Arc<Mutex<T>>;
 
 fn does_room_group_exists(url: &String, group: &String) -> bool {
-    if let Ok(response) = reqwest::blocking::get(url.to_owned() + group) {
+    let full_url = format!("{}{}", url, group);
+    if let Ok(response) = reqwest::blocking::get(full_url) {
         if response.status().is_success() {
             if let Ok(text) = response.text() {
                 return text.trim().contains("yes");
@@ -117,10 +124,19 @@ pub fn add_client(
             "New client ({}) added to {}",
             client.global_id, rg.full_roomgroup
         );
-    } else if conf.kind == config_loader::RoomKind::Broadcast || does_room_group_exists(
-        &rg.fetchURL.unwrap(),
-        &rg.group.unwrap(),
-    ) {
+        return;
+    }
+
+    let is_valid = if conf.kind == config_loader::RoomKind::Broadcast {
+        true
+    } else {
+        match (&rg.fetchURL, &rg.group) {
+            (Some(url), Some(group)) => does_room_group_exists(url, group),
+            _ => false, // this case shouldn't appear
+        }
+    };
+
+    if is_valid {
         guard.insert(
             rg.full_roomgroup.clone(),
             ServerRoom {
@@ -132,31 +148,37 @@ pub fn add_client(
             "Client ({}) added to {} (new group)",
             client.global_id, &rg.full_roomgroup
         );
+    // guard released at end of scope
     } else {
         warn!(
             "Client ({}) can't be added to {} (invalid group)",
             client.global_id, &rg.full_roomgroup
         );
     }
-    // guard released at end of scope
 }
 
-pub fn rm_client (map: SharedM<ServerMap>, id: u64) {
-    
+pub fn rm_client(map: SharedM<ServerMap>, id: u64) {
+    let mut guard = map.lock().unwrap();
+
+    // for each room, remove clients with `global_id == id`, then remove empty rooms.
+    guard.retain(|_room_name, server_room| {
+        server_room.clients.retain(|c| c.global_id != id);
+        !server_room.clients.is_empty()
+    });
 }
 
 pub fn broadcast_to_group(map: SharedM<ServerMap>, group: &str, msg: Message) {
     // hold lock while collecting clients
-    let clients = {
+    let maybe_roomgroup = {
         let guard = map.lock().unwrap();
         guard.get(group).cloned()
     };
 
-    if let Some(clients) = clients {
+    if let Some(roomgroup) = maybe_roomgroup {
         // now send without holding the lock
-        for tx in clients.clients {
+        for client in roomgroup.clients {
             // send consumes msg, so clone if necessary
-            let _ = tx.c.send(msg.clone());
+            let _ = client.c.send(msg.clone());
         }
     }
 }
