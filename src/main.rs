@@ -1,7 +1,8 @@
 use anyhow::Context;
-use com::{add_client, rm_client, ClientMap, ServerMap, SharedM};
+use com::{add_client_to_rg, broadcast_to_group, rm_client, ClientMap, ClientRoom, ServerMap, SharedM};
 use config_loader::RoomConfig;
 use futures::{SinkExt, StreamExt};
+use handler::handle_message;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -12,7 +13,7 @@ use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
-use tracing::{error, info, trace};
+use tracing::{error, info, trace, warn};
 
 mod com;
 mod config_loader;
@@ -33,7 +34,7 @@ fn get_new_client_id() -> u64 {
 
 static ROOM_CONFIGS: OnceLock<HashMap<String, RoomConfig>> = OnceLock::new();
 
-fn get_rooms() -> &'static HashMap<String, RoomConfig> {
+fn get_rooms_config() -> &'static HashMap<String, RoomConfig> {
     ROOM_CONFIGS.get_or_init(|| -> HashMap<String, RoomConfig> {
         let mut m = HashMap::new();
         let habile = config_loader::load_configs().unwrap_or(vec![]);
@@ -110,29 +111,22 @@ async fn main() -> anyhow::Result<()> {
             let client_id = get_new_client_id();
             println!("New WebSocket connection ({}) established", client_id);
 
-            let _room_map = get_rooms();
+            let configs = get_rooms_config();
 
             // Split the WebSocket stream into read and write halves
             let (mut write, mut read) = ws_stream.split();
 
             // add this client to the shared list
             let (tx, mut rx) = mpsc::unbounded_channel();
+            let client_r = ClientRoom {
+                c: tx,
+                global_id: client_id,
+            };
 
             {
                 let mut guard = clients.lock().unwrap();
                 guard.insert(client_id, vec![]);
             }
-            // {
-            //     // let mut clients_guard = clients.lock().await;
-            //     // clients_guard.insert(
-            //     //     id,
-            //     //     com::ClientRoom {
-            //     //         c: tx,
-            //     //         global_id: id,
-            //     //         // prefix: String::from(""),
-            //     //     },
-            //     // );
-            // }
 
             // sending messages to the client
             let send_task = tokio::spawn(async move {
@@ -147,6 +141,16 @@ async fn main() -> anyhow::Result<()> {
             while let Some(Ok(msg)) = read.next().await {
                 if let Message::Text(txt) = msg {
                     trace!("Received: {}", txt);
+
+                    if let Some(res) = handle_message(txt.to_string(), &configs) {
+
+                    add_client_to_rg(&rooms, &clients, res.room_config, res.room_group.clone(), client_r.clone());
+                    broadcast_to_group(&rooms, &res.room_group.full_roomgroup, res.send_message);
+                    } else {
+                        warn!("Closing connection {}: unknown/invalid message", client_id);
+                        let _ = client_r.c.send(Message::Close(None));  //tx.
+                        break;
+                    }
                     // if txt.contains("new micasend message") {
                     //     println!("Broadcasting ping");
 
@@ -165,11 +169,6 @@ async fn main() -> anyhow::Result<()> {
 
             // remove the client from the shared list
             rm_client(&rooms, &clients, client_id);
-            // {
-            //     let mut clients_guard = clients.lock().unwrap();
-            //     // clients_guard.retain(|client| !client.c.is_closed());
-            //     clients_guard.remove(&client_id);
-            // }
 
             // wait for the send task to finish
             let _ = send_task.await;

@@ -14,7 +14,7 @@ pub struct RoomGroup {
     pub full_roomgroup: String,
     pub room: String,
     pub group: Option<String>,
-    pub fetchURL: Option<String>,
+    pub fetch_url: Option<String>,
 }
 
 pub struct SplittedMessage {
@@ -38,7 +38,7 @@ pub fn str_to_roomgroup(confs: &HashMap<String, RoomConfig>, name: &str) -> Opti
                     full_roomgroup: name.to_string(),
                     room: name.to_string(),
                     group: None,
-                    fetchURL: None,
+                    fetch_url: None,
                 });
             }
             Some(_) => {
@@ -76,7 +76,7 @@ pub fn str_to_roomgroup(confs: &HashMap<String, RoomConfig>, name: &str) -> Opti
             full_roomgroup: format!("{}/{}", room, group),
             room: room.to_string(),
             group: Some(group.to_string()),
-            fetchURL: Some(url),
+            fetch_url: Some(url),
         }),
     }
 }
@@ -91,7 +91,7 @@ pub struct ClientRoom {
 #[derive(Clone)]
 pub struct ServerRoom {
     pub clients: Vec<ClientRoom>,
-    pub config: RoomConfig,
+    // pub config: RoomConfig,
 }
 
 pub type ServerMap = HashMap<String, ServerRoom>;
@@ -110,7 +110,7 @@ fn does_room_group_exists(url: &String, group: &String) -> bool {
     false
 }
 
-pub fn add_client(
+pub fn add_client_to_rg(
     smap: &SharedM<ServerMap>,
     cmap: &SharedM<ClientMap>,
     // confs: &HashMap<String, RoomConfig>,
@@ -143,7 +143,7 @@ pub fn add_client(
     let is_valid = if conf.kind == config_loader::RoomKind::Broadcast {
         true
     } else {
-        match (&rg.fetchURL, &rg.group) {
+        match (&rg.fetch_url, &rg.group) {
             (Some(url), Some(group)) => does_room_group_exists(url, group),
             _ => false, // this case shouldn't appear
         }
@@ -154,7 +154,7 @@ pub fn add_client(
             rg.full_roomgroup.clone(),
             ServerRoom {
                 clients: vec![client.clone()],
-                config: conf,
+                // config: conf,
             },
         );
         info!(
@@ -185,10 +185,10 @@ pub fn rm_client(smap: &SharedM<ServerMap>, cmap: &SharedM<ClientMap>, id: u64) 
     }
 }
 
-pub fn broadcast_to_group(map: SharedM<ServerMap>, group: &str, msg: Message) {
+pub fn broadcast_to_group(smap: &SharedM<ServerMap>, group: &str, msg: String) {
     // hold lock while collecting clients
     let maybe_roomgroup = {
-        let guard = map.lock().unwrap();
+        let guard = smap.lock().unwrap();
         guard.get(group).cloned()
     };
 
@@ -196,7 +196,7 @@ pub fn broadcast_to_group(map: SharedM<ServerMap>, group: &str, msg: Message) {
         // now send without holding the lock
         for client in roomgroup.clients {
             // send consumes msg, so clone if necessary
-            let _ = client.c.send(msg.clone());
+            let _ = client.c.send(msg.clone().into());
         }
     }
 }

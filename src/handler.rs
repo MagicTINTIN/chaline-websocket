@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    com::{str_to_roomgroup, SplittedMessage},
+    com::{str_to_roomgroup, RoomGroup, SplittedMessage},
     config_loader::RoomConfig,
 };
 
@@ -27,18 +27,26 @@ fn split_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<Spl
 }
 
 fn is_authorized_message(msg: String, conf: &RoomConfig) -> bool {
-    conf.authorized_messages.is_empty() || conf.authorized_messages.contains(&msg) 
+    conf.authorized_messages.is_empty() || conf.authorized_messages.contains(&msg)
 }
 
 pub struct WebSocketAction {
-    send_message: String,
+    pub send_message: String,
+    pub room_group: RoomGroup,
+    pub room_config: RoomConfig,
 }
 
 pub fn handle_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<WebSocketAction> {
     let splitted_msg = split_message(msg, confs)?;
     let conf = confs.get(&splitted_msg.room_group.room)?;
 
-    if is_authorized_message(splitted_msg.content.clone(), conf) {return None;}
-    
-    Some(WebSocketAction{send_message:splitted_msg.content})
+    if is_authorized_message(splitted_msg.content.clone(), conf) {
+        return None;
+    }
+
+    Some(WebSocketAction {
+        send_message: splitted_msg.content,
+        room_group: splitted_msg.room_group,
+        room_config: conf.clone(),
+    })
 }
