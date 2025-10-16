@@ -128,6 +128,10 @@ pub async fn add_client(
     // guard released at end of scope
 }
 
+pub fn rm_client (map: SharedServerMap, id: u64) {
+    
+}
+
 pub async fn broadcast_to_group(map: SharedServerMap, group: &str, msg: Message) {
     // hold lock while collecting clients
     let clients = {

@@ -26,8 +26,19 @@ fn split_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<Spl
     }
 }
 
-pub struct WebSocketAction {}
+fn is_authorized_message(msg: String, conf: &RoomConfig) -> bool {
+    conf.authorized_messages.is_empty() || conf.authorized_messages.contains(&msg) 
+}
+
+pub struct WebSocketAction {
+    send_message: String,
+}
 
 pub fn handle_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<WebSocketAction> {
-    None
+    let splitted_msg = split_message(msg, confs)?;
+    let conf = confs.get(&splitted_msg.room_group.room)?;
+
+    if is_authorized_message(splitted_msg.content.clone(), conf) {return None;}
+    
+    Some(WebSocketAction{send_message:splitted_msg.content})
 }

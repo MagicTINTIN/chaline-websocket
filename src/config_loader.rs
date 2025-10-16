@@ -82,7 +82,7 @@ pub fn load_room_config(path: &String) -> Option<RoomConfig> {
                     authorized_messages:auth_msgs,
                 })
             } else {
-                error!("missing fetchURL field necessary for 'group' and 'individual' room types!");
+                error!("missing fetchURL field necessary for 'group'room type!");
                 None
             }
         }
@@ -94,7 +94,7 @@ pub fn load_room_config(path: &String) -> Option<RoomConfig> {
                     authorized_messages:auth_msgs,
                 })
             } else {
-                error!("missing fetchURL field necessary for 'group' and 'individual' room types!");
+                error!("missing fetchURL field necessary for 'individual' room type!");
                 None
             }
         }
