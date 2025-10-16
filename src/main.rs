@@ -1,5 +1,5 @@
 use anyhow::Context;
-use com::{ClientMap, ServerMap, SharedM};
+use com::{add_client, rm_client, ClientMap, ServerMap, SharedM};
 use config_loader::RoomConfig;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
@@ -77,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
     // shared list of clients
     let clients: SharedM<ClientMap> = Arc::new(Mutex::new(HashMap::new())); //tokio::sync::
     let rooms: SharedM<ServerMap> = Arc::new(Mutex::new(HashMap::new())); //tokio::sync::
-    // let clients = Arc::new(Mutex::new(Vec::new()));
+                                                                          // let clients = Arc::new(Mutex::new(Vec::new()));
 
     // TCP listener
     let listener = TcpListener::bind("[::]:8443").await?;
@@ -86,6 +86,8 @@ async fn main() -> anyhow::Result<()> {
     while let Ok((stream, _)) = listener.accept().await {
         let acceptor = acceptor.clone();
         let clients = Arc::clone(&clients);
+        let rooms = Arc::clone(&rooms);
+        // let clients = Arc::clone(&clients);
 
         tokio::spawn(async move {
             // accept TLS connection
@@ -115,17 +117,22 @@ async fn main() -> anyhow::Result<()> {
 
             // add this client to the shared list
             let (tx, mut rx) = mpsc::unbounded_channel();
+
             {
-                // let mut clients_guard = clients.lock().await;
-                // clients_guard.insert(
-                //     id,
-                //     com::ClientRoom {
-                //         c: tx,
-                //         global_id: id,
-                //         // prefix: String::from(""),
-                //     },
-                // );
+                let mut guard = clients.lock().unwrap();
+                guard.insert(client_id, vec![]);
             }
+            // {
+            //     // let mut clients_guard = clients.lock().await;
+            //     // clients_guard.insert(
+            //     //     id,
+            //     //     com::ClientRoom {
+            //     //         c: tx,
+            //     //         global_id: id,
+            //     //         // prefix: String::from(""),
+            //     //     },
+            //     // );
+            // }
 
             // sending messages to the client
             let send_task = tokio::spawn(async move {
@@ -157,11 +164,12 @@ async fn main() -> anyhow::Result<()> {
             info!("Socket connection ended");
 
             // remove the client from the shared list
-            {
-                let mut clients_guard = clients.lock().unwrap();
-                // clients_guard.retain(|client| !client.c.is_closed());
-                clients_guard.remove(&client_id);
-            }
+            rm_client(&rooms, &clients, client_id);
+            // {
+            //     let mut clients_guard = clients.lock().unwrap();
+            //     // clients_guard.retain(|client| !client.c.is_closed());
+            //     clients_guard.remove(&client_id);
+            // }
 
             // wait for the send task to finish
             let _ = send_task.await;

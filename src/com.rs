@@ -111,8 +111,8 @@ fn does_room_group_exists(url: &String, group: &String) -> bool {
 }
 
 pub fn add_client(
-    smap: SharedM<ServerMap>,
-    cmap: SharedM<ClientMap>,
+    smap: &SharedM<ServerMap>,
+    cmap: &SharedM<ClientMap>,
     // confs: &HashMap<String, RoomConfig>,
     conf: RoomConfig,
     rg: RoomGroup,
@@ -120,7 +120,15 @@ pub fn add_client(
 ) {
     {
         let mut guard = cmap.lock().unwrap();
-        guard.insert(client.global_id, vec![]);
+        if let Some(cmap_client) = guard.get_mut(&client.global_id) {
+            if cmap_client.contains(&rg.full_roomgroup) {
+                return;
+            } else {
+                cmap_client.push(rg.full_roomgroup.clone());
+            }
+        } else {
+            guard.insert(client.global_id, vec![]);
+        }
     }
     let mut guard = smap.lock().unwrap();
     if let Some(rg_name) = guard.get_mut(&rg.full_roomgroup) {
@@ -162,7 +170,7 @@ pub fn add_client(
     }
 }
 
-pub fn rm_client(smap: SharedM<ServerMap>, cmap: SharedM<ClientMap>, id: u64) {
+pub fn rm_client(smap: &SharedM<ServerMap>, cmap: &SharedM<ClientMap>, id: u64) {
     {
         let mut guard = cmap.lock().unwrap();
         guard.remove(&id);
