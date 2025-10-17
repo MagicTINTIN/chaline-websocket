@@ -58,6 +58,8 @@ fn get_rooms_config() -> &'static HashMap<String, RoomConfig> {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let ssl_disabled = args.contains(&"--no-ssl".to_string());
+    tracing::subscriber::set_global_default(tracing_subscriber::fmt::Subscriber::new()).unwrap();
+
     if ssl_disabled {
         main_without_tls().unwrap();
     } else {
@@ -67,8 +69,6 @@ fn main() {
 
 #[tokio::main]
 async fn main_without_tls() -> anyhow::Result<()> {
-    tracing::subscriber::set_global_default(tracing_subscriber::fmt::Subscriber::new()).unwrap();
-
     // shared list of clients
     let clients: SharedM<ClientMap> = Arc::new(Mutex::new(HashMap::new()));
     let rooms: SharedM<ServerMap> = Arc::new(Mutex::new(HashMap::new()));

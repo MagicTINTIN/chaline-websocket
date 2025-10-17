@@ -13,16 +13,19 @@ configs.json
 ```
 
 Each room configuration is defined like this
-- Broadcast mode with only one message authorized
+- Broadcast mode with authorized messages with a different reply
 ```json
 {
     "name":"MicaSend",
     "type":"broadcast",
     "prefix":"micasend",
-    "authorized": ["ping"]
+    "map": {
+        "new micasend message":"new message notification",
+        "ping":"pong"
+    }
 }
 ```
-- Groups mode with some messages authorized
+- Groups mode with some messages authorized (that will be broadcasted)
 ```json
 {
     "name":"Clavardons",

@@ -2,5 +2,8 @@
     "name":"MicaSend",
     "type":"broadcast",
     "prefix":"micasend",
-    "authorized": ["ping"]
+    "map": {
+        "new micasend message":"new message notification",
+        "ping":"pong"
+    }
 }
