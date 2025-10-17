@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::{fmt, fs};
+use std::{collections::HashMap, fmt, fs};
 use tracing::{error, info};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -24,6 +24,7 @@ pub struct RoomConfig {
     pub prefix: String,
     pub kind: RoomKind,
     pub authorized_messages: Vec<String>,
+    pub message_map: HashMap<String, String>,
 }
 
 pub fn load_configs() -> Option<Vec<String>> {
@@ -63,26 +64,39 @@ pub fn load_room_config(path: &String) -> Option<RoomConfig> {
     let kind = v.get("type").and_then(|x| x.as_str());
 
     let auth_msgs = v["authorized"]
-        .as_array().unwrap_or(&vec![])
+        .as_array()
+        .unwrap_or(&vec![])
         .iter()
         .filter_map(|r| r.as_str().map(|s| s.to_string()))
         .collect::<Vec<String>>();
+
+    let mut map_msg = HashMap::new();
+    if let Some(map_value) = v.get("map") {
+        map_msg.extend(
+            map_value
+                .as_object()?
+                .into_iter()
+                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))),
+        );
+    }
 
     match kind {
         Some("broadcast") => Some(RoomConfig {
             prefix: prefix.to_string(),
             kind: RoomKind::Broadcast,
-            authorized_messages:auth_msgs,
+            authorized_messages: auth_msgs,
+            message_map: map_msg,
         }),
         Some("group") => {
             if let Some(url) = v.get("fetchURL").and_then(|x| x.as_str()) {
                 Some(RoomConfig {
                     prefix: prefix.to_string(),
                     kind: RoomKind::Group(String::from(url)),
-                    authorized_messages:auth_msgs,
+                    authorized_messages: auth_msgs,
+                    message_map: map_msg,
                 })
             } else {
-                error!("missing fetchURL field necessary for 'group'room type!");
+                error!("missing fetchURL field necessary for 'group' room type!");
                 None
             }
         }
@@ -91,7 +105,8 @@ pub fn load_room_config(path: &String) -> Option<RoomConfig> {
                 Some(RoomConfig {
                     prefix: prefix.to_string(),
                     kind: RoomKind::Individual(String::from(url)),
-                    authorized_messages:auth_msgs,
+                    authorized_messages: auth_msgs,
+                    message_map: map_msg,
                 })
             } else {
                 error!("missing fetchURL field necessary for 'individual' room type!");

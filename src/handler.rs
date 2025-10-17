@@ -10,7 +10,7 @@ use crate::{
 fn split_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<SplittedMessage> {
     let parts = msg.splitn(2, ":").collect::<Vec<_>>();
 
-    println!("split> {:?}", parts);
+    // println!("split> {:?}", parts);
 
     if parts.len() < 2 {
         return None;
@@ -36,7 +36,8 @@ fn split_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<Spl
 }
 
 fn is_authorized_message(msg: String, conf: &RoomConfig) -> bool {
-    conf.authorized_messages.is_empty() || conf.authorized_messages.contains(&msg)
+    (conf.authorized_messages.is_empty() && conf.message_map.is_empty())
+        || conf.authorized_messages.contains(&msg) || conf.message_map.contains_key(&msg)
 }
 
 pub struct WebSocketAction {
@@ -57,8 +58,10 @@ pub fn handle_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Optio
         return None;
     }
 
+    let msg_to_send = conf.message_map.get(&splitted_msg.content).unwrap_or(&splitted_msg.content).clone();
+
     Some(WebSocketAction {
-        send_message: splitted_msg.content,
+        send_message: msg_to_send,
         room_group: splitted_msg.room_group,
         room_config: conf.clone(),
     })

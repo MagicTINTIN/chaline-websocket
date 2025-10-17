@@ -26,7 +26,7 @@ pub struct SplittedMessage {
 pub fn str_to_roomgroup(confs: &HashMap<String, RoomConfig>, name: &str) -> Option<RoomGroup> {
     let name_parts = name.split('/').collect::<Vec<_>>();
 
-    println!("str2rg> {:?}", name_parts);
+    // println!("str2rg> {:?}", name_parts);
 
     if name_parts.len() > 2 {
         warn!("{} is not a valid room/group name", name);

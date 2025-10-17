@@ -1,5 +1,7 @@
 use anyhow::Context;
-use com::{add_client_to_rg, broadcast_to_group, rm_client, ClientMap, ClientRoom, ServerMap, SharedM};
+use com::{
+    add_client_to_rg, broadcast_to_group, rm_client, ClientMap, ClientRoom, ServerMap, SharedM,
+};
 use config_loader::RoomConfig;
 use futures::{SinkExt, StreamExt};
 use handler::handle_message;
@@ -7,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
-use tokio::sync::{mpsc,Mutex};
+use tokio::sync::{mpsc, Mutex};
 use tokio_rustls::rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
@@ -39,15 +41,19 @@ fn get_rooms_config() -> &'static HashMap<String, RoomConfig> {
         let mut m = HashMap::new();
         let habile = config_loader::load_configs().unwrap_or(vec![]);
         for e in habile.into_iter() {
-            println!("> {}", &e);
             let rc = config_loader::load_room_config(&e).unwrap();
 
-            println!(
-                "[{}]={}: {} messages authorized",
+            info!(
+                "> {}\n[{}]={}: {} messages authorized",
+                &e,
                 &rc.prefix,
                 &rc.kind,
-                &rc.authorized_messages.len()
+                &rc.authorized_messages.len().max(rc.message_map.len())
             );
+
+            if !rc.message_map.is_empty() {
+                info!("{:?}", rc.message_map);
+            }
             // mut_conf_vec.push(rc);
             m.insert(rc.prefix.clone(), rc);
         }
@@ -82,7 +88,6 @@ async fn main_without_tls() -> anyhow::Result<()> {
         let rooms = Arc::clone(&rooms);
 
         tokio::spawn(async move {
-
             // upgrade to WebSocket
             let ws_stream = match accept_async(stream).await {
                 Ok(ws) => ws,
@@ -126,12 +131,23 @@ async fn main_without_tls() -> anyhow::Result<()> {
                     trace!("Received: {}", txt);
 
                     if let Some(res) = handle_message(txt.to_string(), &configs) {
-
-                    add_client_to_rg(&rooms, &clients, res.room_config, res.room_group.clone(), client_r.clone()).await;
-                    broadcast_to_group(&rooms, &res.room_group.full_roomgroup, res.send_message).await;
+                        add_client_to_rg(
+                            &rooms,
+                            &clients,
+                            res.room_config,
+                            res.room_group.clone(),
+                            client_r.clone(),
+                        )
+                        .await;
+                        broadcast_to_group(
+                            &rooms,
+                            &res.room_group.full_roomgroup,
+                            res.send_message,
+                        )
+                        .await;
                     } else {
                         warn!("Closing connection {}: unknown/invalid message", client_id);
-                        let _ = client_r.c.send(Message::Close(None));  //tx.
+                        let _ = client_r.c.send(Message::Close(None)); //tx.
                         break;
                     }
                 }
@@ -153,7 +169,8 @@ async fn main_without_tls() -> anyhow::Result<()> {
 #[tokio::main]
 async fn main_tls() -> anyhow::Result<()> {
     // Works only for one certificate
-    let cert = CertificateDer::from_pem_file("/etc/ssl/private/mtc").context("no certificate found")?;
+    let cert =
+        CertificateDer::from_pem_file("/etc/ssl/private/mtc").context("no certificate found")?;
     let key = PrivateKeyDer::from_pem_file("/etc/ssl/private/mtk").context("no key found")?;
 
     // TLS server
@@ -230,12 +247,23 @@ async fn main_tls() -> anyhow::Result<()> {
                     trace!("Received: {}", txt);
 
                     if let Some(res) = handle_message(txt.to_string(), &configs) {
-
-                    add_client_to_rg(&rooms, &clients, res.room_config, res.room_group.clone(), client_r.clone()).await;
-                    broadcast_to_group(&rooms, &res.room_group.full_roomgroup, res.send_message).await;
+                        add_client_to_rg(
+                            &rooms,
+                            &clients,
+                            res.room_config,
+                            res.room_group.clone(),
+                            client_r.clone(),
+                        )
+                        .await;
+                        broadcast_to_group(
+                            &rooms,
+                            &res.room_group.full_roomgroup,
+                            res.send_message,
+                        )
+                        .await;
                     } else {
                         warn!("Closing connection {}: unknown/invalid message", client_id);
-                        let _ = client_r.c.send(Message::Close(None));  //tx.
+                        let _ = client_r.c.send(Message::Close(None)); //tx.
                         break;
                     }
                     // if txt.contains("new micasend message") {
