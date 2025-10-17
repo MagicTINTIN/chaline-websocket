@@ -55,18 +55,119 @@ fn get_rooms_config() -> &'static HashMap<String, RoomConfig> {
     })
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() {
     let args: Vec<String> = std::env::args().collect();
     let ssl_disabled = args.contains(&"--no-ssl".to_string());
     if ssl_disabled {
-        todo!("Version without SSL not implemented yet!");
+        // todo!("Version without SSL not implemented yet!");
+        main_without_tls().unwrap();
+    } else {
+        main_tls().unwrap();
+    }
+}
+
+#[tokio::main]
+async fn main_without_tls() -> anyhow::Result<()> {
+    tracing::subscriber::set_global_default(tracing_subscriber::fmt::Subscriber::new()).unwrap();
+
+    // shared list of clients
+    let clients: SharedM<ClientMap> = Arc::new(Mutex::new(HashMap::new())); //tokio::sync::
+    let rooms: SharedM<ServerMap> = Arc::new(Mutex::new(HashMap::new())); //tokio::sync::
+                                                                          // let clients = Arc::new(Mutex::new(Vec::new()));
+
+    // TCP listener
+    let listener = TcpListener::bind("[::]:8080").await?;
+    println!("Listening on ws://[::]:8080");
+
+    while let Ok((stream, _)) = listener.accept().await {
+        let clients = Arc::clone(&clients);
+        let rooms = Arc::clone(&rooms);
+        // let clients = Arc::clone(&clients);
+
+        tokio::spawn(async move {
+
+            // upgrade to WebSocket
+            let ws_stream = match accept_async(stream).await {
+                Ok(ws) => ws,
+                Err(err) => {
+                    error!("WebSocket handshake failed: {}", err);
+                    return;
+                }
+            };
+            let client_id = get_new_client_id();
+            println!("New WebSocket connection ({}) established", client_id);
+
+            let configs = get_rooms_config();
+
+            // Split the WebSocket stream into read and write halves
+            let (mut write, mut read) = ws_stream.split();
+
+            // add this client to the shared list
+            let (tx, mut rx) = mpsc::unbounded_channel();
+            let client_r = ClientRoom {
+                c: tx,
+                global_id: client_id,
+            };
+
+            {
+                let mut guard = clients.lock().unwrap();
+                guard.insert(client_id, vec![]);
+            }
+
+            // sending messages to the client
+            let send_task = tokio::spawn(async move {
+                while let Some(msg) = rx.recv().await {
+                    if write.send(msg).await.is_err() {
+                        break; // Client disconnected
+                    }
+                }
+            });
+
+            // receiving messages from the client
+            while let Some(Ok(msg)) = read.next().await {
+                if let Message::Text(txt) = msg {
+                    trace!("Received: {}", txt);
+
+                    if let Some(res) = handle_message(txt.to_string(), &configs) {
+
+                    add_client_to_rg(&rooms, &clients, res.room_config, res.room_group.clone(), client_r.clone());
+                    broadcast_to_group(&rooms, &res.room_group.full_roomgroup, res.send_message);
+                    } else {
+                        warn!("Closing connection {}: unknown/invalid message", client_id);
+                        let _ = client_r.c.send(Message::Close(None));  //tx.
+                        break;
+                    }
+                    // if txt.contains("new micasend message") {
+                    //     println!("Broadcasting ping");
+
+                    //     // Broadcast to all clients
+                    //     let clients_guard = clients.lock().unwrap();
+                    //     for client in clients_guard.iter() {
+                    //         let _ = client
+                    //             .c
+                    //             .send(Message::Text("new message notification".to_string().into()));
+                    //     }
+                    // }
+                }
+            }
+
+            info!("Socket connection ended");
+
+            // remove the client from the shared list
+            rm_client(&rooms, &clients, client_id);
+
+            // wait for the send task to finish
+            let _ = send_task.await;
+        });
     }
 
-    tracing::subscriber::set_global_default(tracing_subscriber::fmt::Subscriber::new()).unwrap();
+    Ok(())
+}
+
+#[tokio::main]
+async fn main_tls() -> anyhow::Result<()> {
     // Works only for one certificate
-    let cert =
-        CertificateDer::from_pem_file("/etc/ssl/private/mtc").context("no certificate found")?;
+    let cert = CertificateDer::from_pem_file("/etc/ssl/private/mtc").context("no certificate found")?;
     let key = PrivateKeyDer::from_pem_file("/etc/ssl/private/mtk").context("no key found")?;
 
     // TLS server

@@ -1,0 +1,6 @@
+{
+    "name":"test",
+    "type":"group",
+    "prefix":"test",
+    "fetchURL":"https://0xy.fr/yes?id="
+}
