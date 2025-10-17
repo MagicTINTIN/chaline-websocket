@@ -1,9 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
-use tokio::sync::mpsc; //{mpsc, Mutex}
+use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::config_loader::{self, RoomConfig, RoomKind};
@@ -25,6 +25,8 @@ pub struct SplittedMessage {
 
 pub fn str_to_roomgroup(confs: &HashMap<String, RoomConfig>, name: &str) -> Option<RoomGroup> {
     let name_parts = name.split('/').collect::<Vec<_>>();
+
+    println!("str2rg> {:?}", name_parts);
 
     if name_parts.len() > 2 {
         warn!("{} is not a valid room/group name", name);
@@ -98,19 +100,18 @@ pub type ServerMap = HashMap<String, ServerRoom>;
 pub type ClientMap = HashMap<u64, Vec<String>>;
 pub type SharedM<T> = Arc<Mutex<T>>;
 
-fn does_room_group_exists(url: &String, group: &String) -> bool {
-    let full_url = format!("{}{}", url, group);
-    if let Ok(response) = reqwest::blocking::get(full_url) {
-        if response.status().is_success() {
-            if let Ok(text) = response.text() {
-                return text.trim().contains("yes");
-            }
-        }
+pub async fn does_room_group_exists(url: &str, group: &str) -> Result<bool, reqwest::Error> {
+    let full_url = format!("{url}{group}");
+    let resp = reqwest::get(&full_url).await?;
+    if resp.status().is_success() {
+        let text = resp.text().await?;
+        Ok(text.trim().contains("yes"))
+    } else {
+        Ok(false)
     }
-    false
 }
 
-pub fn add_client_to_rg(
+pub async fn add_client_to_rg(
     smap: &SharedM<ServerMap>,
     cmap: &SharedM<ClientMap>,
     // confs: &HashMap<String, RoomConfig>,
@@ -119,7 +120,7 @@ pub fn add_client_to_rg(
     client: ClientRoom,
 ) {
     {
-        let mut guard = cmap.lock().unwrap();
+        let mut guard = cmap.lock().await;
         if let Some(cmap_client) = guard.get_mut(&client.global_id) {
             if cmap_client.contains(&rg.full_roomgroup) {
                 return;
@@ -130,7 +131,7 @@ pub fn add_client_to_rg(
             guard.insert(client.global_id, vec![]);
         }
     }
-    let mut guard = smap.lock().unwrap();
+    let mut guard = smap.lock().await;
     if let Some(rg_name) = guard.get_mut(&rg.full_roomgroup) {
         rg_name.clients.push(client.clone());
         info!(
@@ -141,10 +142,20 @@ pub fn add_client_to_rg(
     }
 
     let is_valid = if conf.kind == config_loader::RoomKind::Broadcast {
+        info!("broadcast room, no need to check group");
         true
     } else {
         match (&rg.fetch_url, &rg.group) {
-            (Some(url), Some(group)) => does_room_group_exists(url, group),
+            (Some(url), Some(group)) => match does_room_group_exists(&url, &group).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!(
+                            "Error checking remote group existence for {} ({}): {:?}",
+                            url, group, e
+                        );
+                        false
+                    }
+                },
             _ => false, // this case shouldn't appear
         }
     };
@@ -170,13 +181,13 @@ pub fn add_client_to_rg(
     }
 }
 
-pub fn rm_client(smap: &SharedM<ServerMap>, cmap: &SharedM<ClientMap>, id: u64) {
+pub async fn rm_client(smap: &SharedM<ServerMap>, cmap: &SharedM<ClientMap>, id: u64) {
     {
-        let mut guard = cmap.lock().unwrap();
+        let mut guard = cmap.lock().await;
         guard.remove(&id);
     }
     {
-        let mut guard = smap.lock().unwrap();
+        let mut guard = smap.lock().await;
         // for each room, remove clients with `global_id == id`, then remove empty rooms.
         guard.retain(|_room_name, server_room| {
             server_room.clients.retain(|c| c.global_id != id);
@@ -185,10 +196,10 @@ pub fn rm_client(smap: &SharedM<ServerMap>, cmap: &SharedM<ClientMap>, id: u64) 
     }
 }
 
-pub fn broadcast_to_group(smap: &SharedM<ServerMap>, group: &str, msg: String) {
+pub async fn broadcast_to_group(smap: &SharedM<ServerMap>, group: &str, msg: String) {
     // hold lock while collecting clients
     let maybe_roomgroup = {
-        let guard = smap.lock().unwrap();
+        let guard = smap.lock().await;
         guard.get(group).cloned()
     };
 

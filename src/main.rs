@@ -5,9 +5,9 @@ use futures::{SinkExt, StreamExt};
 use handler::handle_message;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc,Mutex};
 use tokio_rustls::rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
@@ -59,7 +59,6 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let ssl_disabled = args.contains(&"--no-ssl".to_string());
     if ssl_disabled {
-        // todo!("Version without SSL not implemented yet!");
         main_without_tls().unwrap();
     } else {
         main_tls().unwrap();
@@ -71,9 +70,8 @@ async fn main_without_tls() -> anyhow::Result<()> {
     tracing::subscriber::set_global_default(tracing_subscriber::fmt::Subscriber::new()).unwrap();
 
     // shared list of clients
-    let clients: SharedM<ClientMap> = Arc::new(Mutex::new(HashMap::new())); //tokio::sync::
-    let rooms: SharedM<ServerMap> = Arc::new(Mutex::new(HashMap::new())); //tokio::sync::
-                                                                          // let clients = Arc::new(Mutex::new(Vec::new()));
+    let clients: SharedM<ClientMap> = Arc::new(Mutex::new(HashMap::new()));
+    let rooms: SharedM<ServerMap> = Arc::new(Mutex::new(HashMap::new()));
 
     // TCP listener
     let listener = TcpListener::bind("[::]:8080").await?;
@@ -82,7 +80,6 @@ async fn main_without_tls() -> anyhow::Result<()> {
     while let Ok((stream, _)) = listener.accept().await {
         let clients = Arc::clone(&clients);
         let rooms = Arc::clone(&rooms);
-        // let clients = Arc::clone(&clients);
 
         tokio::spawn(async move {
 
@@ -110,7 +107,7 @@ async fn main_without_tls() -> anyhow::Result<()> {
             };
 
             {
-                let mut guard = clients.lock().unwrap();
+                let mut guard = clients.lock().await;
                 guard.insert(client_id, vec![]);
             }
 
@@ -130,31 +127,20 @@ async fn main_without_tls() -> anyhow::Result<()> {
 
                     if let Some(res) = handle_message(txt.to_string(), &configs) {
 
-                    add_client_to_rg(&rooms, &clients, res.room_config, res.room_group.clone(), client_r.clone());
-                    broadcast_to_group(&rooms, &res.room_group.full_roomgroup, res.send_message);
+                    add_client_to_rg(&rooms, &clients, res.room_config, res.room_group.clone(), client_r.clone()).await;
+                    broadcast_to_group(&rooms, &res.room_group.full_roomgroup, res.send_message).await;
                     } else {
                         warn!("Closing connection {}: unknown/invalid message", client_id);
                         let _ = client_r.c.send(Message::Close(None));  //tx.
                         break;
                     }
-                    // if txt.contains("new micasend message") {
-                    //     println!("Broadcasting ping");
-
-                    //     // Broadcast to all clients
-                    //     let clients_guard = clients.lock().unwrap();
-                    //     for client in clients_guard.iter() {
-                    //         let _ = client
-                    //             .c
-                    //             .send(Message::Text("new message notification".to_string().into()));
-                    //     }
-                    // }
                 }
             }
 
             info!("Socket connection ended");
 
             // remove the client from the shared list
-            rm_client(&rooms, &clients, client_id);
+            rm_client(&rooms, &clients, client_id).await;
 
             // wait for the send task to finish
             let _ = send_task.await;
@@ -225,7 +211,7 @@ async fn main_tls() -> anyhow::Result<()> {
             };
 
             {
-                let mut guard = clients.lock().unwrap();
+                let mut guard = clients.lock().await;
                 guard.insert(client_id, vec![]);
             }
 
@@ -245,8 +231,8 @@ async fn main_tls() -> anyhow::Result<()> {
 
                     if let Some(res) = handle_message(txt.to_string(), &configs) {
 
-                    add_client_to_rg(&rooms, &clients, res.room_config, res.room_group.clone(), client_r.clone());
-                    broadcast_to_group(&rooms, &res.room_group.full_roomgroup, res.send_message);
+                    add_client_to_rg(&rooms, &clients, res.room_config, res.room_group.clone(), client_r.clone()).await;
+                    broadcast_to_group(&rooms, &res.room_group.full_roomgroup, res.send_message).await;
                     } else {
                         warn!("Closing connection {}: unknown/invalid message", client_id);
                         let _ = client_r.c.send(Message::Close(None));  //tx.
@@ -269,7 +255,7 @@ async fn main_tls() -> anyhow::Result<()> {
             info!("Socket connection ended");
 
             // remove the client from the shared list
-            rm_client(&rooms, &clients, client_id);
+            rm_client(&rooms, &clients, client_id).await;
 
             // wait for the send task to finish
             let _ = send_task.await;
