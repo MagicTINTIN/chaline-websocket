@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use tracing::warn;
 
 use crate::{
-    com::{str_to_roomgroup, RoomGroup, SplittedMessage},
+    com::{
+        disconnect_group, does_room_group_exists, str_to_roomgroup, RoomGroup, ServerMap, SharedM,
+        SplittedMessage,
+    },
     config_loader::RoomConfig,
 };
 
@@ -37,7 +40,41 @@ fn split_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<Spl
 
 fn is_authorized_message(msg: String, conf: &RoomConfig) -> bool {
     (conf.authorized_messages.is_empty() && conf.message_map.is_empty())
-        || conf.authorized_messages.contains(&msg) || conf.message_map.contains_key(&msg)
+        || conf.authorized_messages.contains(&msg)
+        || conf.message_map.contains_key(&msg)
+}
+
+pub async fn handle_group_destruction(
+    room_group_name: String,
+    confs: &HashMap<String, RoomConfig>,
+    smap: &SharedM<ServerMap>,
+) {
+    // let parts = room_group_name.splitn(2, ":").collect::<Vec<_>>();
+
+    // // println!("split> {:?}", parts);
+
+    // if parts.len() < 2 {
+    //     return ;
+    // }
+
+    // // if !confs.contains_key(parts[0]) {
+    // //     return None;
+    // // }
+
+    if let Some(rg) = str_to_roomgroup(confs, &room_group_name) {
+        if confs.contains_key(&rg.room) && rg.group.is_some() && rg.fetch_url.is_some() {
+            match does_room_group_exists(&rg.fetch_url.unwrap(), &rg.group.unwrap()).await {
+                Ok(v) => {
+                    if v {
+                        disconnect_group(smap, &rg.full_roomgroup).await;
+                    }
+                }
+                Err(_) => {}
+            }
+        } else {
+            warn!("{} room/group not found", rg.room);
+        }
+    }
 }
 
 pub struct WebSocketAction {
@@ -47,6 +84,10 @@ pub struct WebSocketAction {
 }
 
 pub fn handle_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<WebSocketAction> {
+    // if msg.starts_with("-") {
+    //     return None;
+    // }
+
     let splitted_msg = split_message(msg, confs)?;
     let conf = confs.get(&splitted_msg.room_group.room)?;
 
@@ -58,7 +99,11 @@ pub fn handle_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Optio
         return None;
     }
 
-    let msg_to_send = conf.message_map.get(&splitted_msg.content).unwrap_or(&splitted_msg.content).clone();
+    let msg_to_send = conf
+        .message_map
+        .get(&splitted_msg.content)
+        .unwrap_or(&splitted_msg.content)
+        .clone();
 
     Some(WebSocketAction {
         send_message: msg_to_send,

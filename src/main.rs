@@ -4,7 +4,7 @@ use com::{
 };
 use config_loader::RoomConfig;
 use futures::{SinkExt, StreamExt};
-use handler::handle_message;
+use handler::{handle_group_destruction, handle_message};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -130,7 +130,12 @@ async fn main_without_tls() -> anyhow::Result<()> {
                 if let Message::Text(txt) = msg {
                     trace!("Received: {}", txt);
 
-                    if let Some(res) = handle_message(txt.to_string(), &configs) {
+                    if txt.starts_with("-") {
+                        handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms).await;
+                        warn!("Closing connection {}: group is closing...", client_id);
+                        // let _ = client_r.c.send(Message::Close(None)); //tx.
+                        break;
+                    } else if let Some(res) = handle_message(txt.to_string(), &configs) {
                         add_client_to_rg(
                             &rooms,
                             &clients,

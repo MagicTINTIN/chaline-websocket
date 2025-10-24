@@ -211,3 +211,20 @@ pub async fn broadcast_to_group(smap: &SharedM<ServerMap>, group: &str, msg: Str
         }
     }
 }
+
+pub async fn disconnect_group(smap: &SharedM<ServerMap>, group: &str) {
+    // hold lock while collecting clients
+    let maybe_roomgroup = {
+        let guard = smap.lock().await;
+        guard.get(group).cloned()
+    };
+
+    if let Some(roomgroup) = maybe_roomgroup {
+        // now send without holding the lock
+        for client in roomgroup.clients {
+            // send consumes msg, so clone if necessary
+            let _ = client.c.send(Message::Close(None));
+        }
+    }
+}
+
