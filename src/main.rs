@@ -131,13 +131,21 @@ async fn main_without_tls() -> anyhow::Result<()> {
                     trace!("Received: {}", txt);
 
                     if txt.starts_with("-") {
-                        handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms)
-                            .await;
-                        warn!("Closing connection {}: group is closing...", client_id);
-                        // let _ = client_r.c.send(Message::Close(None)); //tx.
+                        if handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms)
+                            .await
+                        {
+                            warn!("Closing connection {}: group is closing...", client_id);
+                        } else {
+                            let _ = client_r.c.send(Message::Close(None));
+                            warn!(
+                                "Closing connection {}: client was trying to close wrong group...",
+                                client_id
+                            );
+                        };
+
                         break;
                     } else if let Some(res) = handle_message(txt.to_string(), &configs) {
-                        if add_client_to_rg(
+                        if !add_client_to_rg(
                             &rooms,
                             &clients,
                             res.room_config,
@@ -145,7 +153,6 @@ async fn main_without_tls() -> anyhow::Result<()> {
                             client_r.clone(),
                         )
                         .await
-                            == false
                         {
                             let _ = client_r.c.send(Message::Close(None));
                             warn!(
@@ -263,13 +270,22 @@ async fn main_tls() -> anyhow::Result<()> {
                     trace!("Received: {}", txt);
 
                     if txt.starts_with("-") {
-                        handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms)
-                            .await;
-                        warn!("Closing connection {}: group is closing...", client_id);
+                        if handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms)
+                            .await
+                        {
+                            warn!("Closing connection {}: group is closing...", client_id);
+                        } else {
+                            let _ = client_r.c.send(Message::Close(None));
+                            warn!(
+                                "Closing connection {}: client was trying to close wrong group...",
+                                client_id
+                            );
+                        };
+
                         // let _ = client_r.c.send(Message::Close(None)); //tx.
                         break;
                     } else if let Some(res) = handle_message(txt.to_string(), &configs) {
-                        if add_client_to_rg(
+                        if !add_client_to_rg(
                             &rooms,
                             &clients,
                             res.room_config,
@@ -277,7 +293,6 @@ async fn main_tls() -> anyhow::Result<()> {
                             client_r.clone(),
                         )
                         .await
-                            == false
                         {
                             let _ = client_r.c.send(Message::Close(None));
                             warn!(

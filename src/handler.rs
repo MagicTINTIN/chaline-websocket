@@ -48,7 +48,7 @@ pub async fn handle_group_destruction(
     room_group_name: String,
     confs: &HashMap<String, RoomConfig>,
     smap: &SharedM<ServerMap>,
-) {
+) -> bool {
     // let parts = room_group_name.splitn(2, ":").collect::<Vec<_>>();
 
     // // println!("split> {:?}", parts);
@@ -67,15 +67,22 @@ pub async fn handle_group_destruction(
                 Ok(v) => {
                     if !v {
                         disconnect_group(smap, &rg.full_roomgroup).await;
+                        true
+                    } else {
+                        false
                     }
                 }
                 Err(_) => {
                     disconnect_group(smap, &rg.full_roomgroup).await;
+                    true
                 }
             }
         } else {
             warn!("{} room/group not found", rg.room);
+            false
         }
+    } else {
+        false
     }
 }
 
