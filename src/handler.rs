@@ -65,11 +65,13 @@ pub async fn handle_group_destruction(
         if confs.contains_key(&rg.room) && rg.group.is_some() && rg.fetch_url.is_some() {
             match does_room_group_exists(&rg.fetch_url.unwrap(), &rg.group.unwrap()).await {
                 Ok(v) => {
-                    if v {
+                    if !v {
                         disconnect_group(smap, &rg.full_roomgroup).await;
                     }
                 }
-                Err(_) => {}
+                Err(_) => {
+                    disconnect_group(smap, &rg.full_roomgroup).await;
+                }
             }
         } else {
             warn!("{} room/group not found", rg.room);
