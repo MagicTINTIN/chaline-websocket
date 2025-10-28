@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -118,12 +115,12 @@ pub async fn add_client_to_rg(
     conf: RoomConfig,
     rg: RoomGroup,
     client: ClientRoom,
-) {
+) -> bool {
     {
         let mut guard = cmap.lock().await;
         if let Some(cmap_client) = guard.get_mut(&client.global_id) {
             if cmap_client.contains(&rg.full_roomgroup) {
-                return;
+                return true;
             } else {
                 cmap_client.push(rg.full_roomgroup.clone());
             }
@@ -138,7 +135,7 @@ pub async fn add_client_to_rg(
             "New client ({}) added to {}",
             client.global_id, rg.full_roomgroup
         );
-        return;
+        return true;
     }
 
     let is_valid = if conf.kind == config_loader::RoomKind::Broadcast {
@@ -147,15 +144,15 @@ pub async fn add_client_to_rg(
     } else {
         match (&rg.fetch_url, &rg.group) {
             (Some(url), Some(group)) => match does_room_group_exists(&url, &group).await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        warn!(
-                            "Error checking remote group existence for {} ({}): {:?}",
-                            url, group, e
-                        );
-                        false
-                    }
-                },
+                Ok(v) => v,
+                Err(e) => {
+                    warn!(
+                        "Error checking remote group existence for {} ({}): {:?}",
+                        url, group, e
+                    );
+                    false
+                }
+            },
             _ => false, // this case shouldn't appear
         }
     };
@@ -172,13 +169,15 @@ pub async fn add_client_to_rg(
             "Client ({}) added to {} (new group)",
             client.global_id, &rg.full_roomgroup
         );
-        // guard released at end of scope
+        true
     } else {
         warn!(
             "Client ({}) can't be added to {} (invalid group)",
             client.global_id, &rg.full_roomgroup
         );
+        false
     }
+    // guard released at end of scope
 }
 
 pub async fn rm_client(smap: &SharedM<ServerMap>, cmap: &SharedM<ClientMap>, id: u64) {
@@ -227,4 +226,3 @@ pub async fn disconnect_group(smap: &SharedM<ServerMap>, group: &str) {
         }
     }
 }
-

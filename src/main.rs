@@ -131,19 +131,30 @@ async fn main_without_tls() -> anyhow::Result<()> {
                     trace!("Received: {}", txt);
 
                     if txt.starts_with("-") {
-                        handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms).await;
+                        handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms)
+                            .await;
                         warn!("Closing connection {}: group is closing...", client_id);
                         // let _ = client_r.c.send(Message::Close(None)); //tx.
                         break;
                     } else if let Some(res) = handle_message(txt.to_string(), &configs) {
-                        add_client_to_rg(
+                        if add_client_to_rg(
                             &rooms,
                             &clients,
                             res.room_config,
                             res.room_group.clone(),
                             client_r.clone(),
                         )
-                        .await;
+                        .await
+                            == false
+                        {
+                            let _ = client_r.c.send(Message::Close(None));
+                            warn!(
+                                "Closing connection {}: error connecting to invalid group...",
+                                client_id
+                            );
+
+                            break;
+                        }
                         broadcast_to_group(
                             &rooms,
                             &res.room_group.full_roomgroup,
@@ -251,15 +262,30 @@ async fn main_tls() -> anyhow::Result<()> {
                 if let Message::Text(txt) = msg {
                     trace!("Received: {}", txt);
 
-                    if let Some(res) = handle_message(txt.to_string(), &configs) {
-                        add_client_to_rg(
+                    if txt.starts_with("-") {
+                        handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms)
+                            .await;
+                        warn!("Closing connection {}: group is closing...", client_id);
+                        // let _ = client_r.c.send(Message::Close(None)); //tx.
+                        break;
+                    } else if let Some(res) = handle_message(txt.to_string(), &configs) {
+                        if add_client_to_rg(
                             &rooms,
                             &clients,
                             res.room_config,
                             res.room_group.clone(),
                             client_r.clone(),
                         )
-                        .await;
+                        .await
+                            == false
+                        {
+                            let _ = client_r.c.send(Message::Close(None));
+                            warn!(
+                                "Closing connection {}: error while connecting to invalid group...",
+                                client_id
+                            );
+                            break;
+                        }
                         broadcast_to_group(
                             &rooms,
                             &res.room_group.full_roomgroup,
