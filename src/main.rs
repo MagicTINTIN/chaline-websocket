@@ -20,6 +20,7 @@ use crate::handler::handle_raw_message;
 mod com;
 mod config_loader;
 mod handler;
+mod http_push;
 
 static GLOBAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -78,6 +79,15 @@ async fn main_without_tls() -> anyhow::Result<()> {
     // shared list of clients
     let clients: SharedM<ClientMap> = Arc::new(Mutex::new(HashMap::new()));
     let rooms: SharedM<ServerMap> = Arc::new(Mutex::new(HashMap::new()));
+
+    // HTTP PUSH listener
+    let http_rooms = rooms.clone();
+    let http_clients = clients.clone();
+    tokio::spawn(async move {
+        if let Err(e) = http_push::spawn_simple_push_listener(http_rooms, http_clients, "127.0.0.1:6442").await {
+            tracing::error!("push listener failed: {:?}", e);
+        }
+    });
 
     // TCP listener
     let listener = TcpListener::bind("[::]:8080").await?;
@@ -160,6 +170,15 @@ async fn main_tls() -> anyhow::Result<()> {
     let clients: SharedM<ClientMap> = Arc::new(Mutex::new(HashMap::new())); //tokio::sync::
     let rooms: SharedM<ServerMap> = Arc::new(Mutex::new(HashMap::new())); //tokio::sync::
                                                                           // let clients = Arc::new(Mutex::new(Vec::new()));
+
+    // HTTP PUSH listener
+    let http_rooms = rooms.clone();
+    let http_clients = clients.clone();
+    tokio::spawn(async move {
+        if let Err(e) = http_push::spawn_simple_push_listener(http_rooms, http_clients, "127.0.0.1:6442").await {
+            tracing::error!("push listener failed: {:?}", e);
+        }
+    });
 
     // TCP listener
     let listener = TcpListener::bind("[::]:8443").await?;
