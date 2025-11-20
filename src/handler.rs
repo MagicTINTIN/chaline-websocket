@@ -1,11 +1,13 @@
+use crate::{add_client_to_rg, com::broadcast_to_group};
 use std::collections::HashMap;
 
-use tracing::warn;
+use tokio_tungstenite::tungstenite::Message;
+use tracing::{trace, warn};
 
 use crate::{
     com::{
-        disconnect_group, does_room_group_exists, str_to_roomgroup, RoomGroup, ServerMap, SharedM,
-        SplittedMessage,
+        disconnect_group, does_room_group_exists, str_to_roomgroup, ClientRoom, RoomGroup,
+        ServerMap, SharedM, SplittedMessage,
     },
     config_loader::RoomConfig,
 };
@@ -119,4 +121,67 @@ pub fn handle_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Optio
         room_group: splitted_msg.room_group,
         room_config: conf.clone(),
     })
+}
+
+pub async fn handle_raw_message(
+    configs: &HashMap<String, RoomConfig>,
+    rooms: &std::sync::Arc<tokio::sync::Mutex<HashMap<String, crate::com::ServerRoom>>>,
+    clients: &std::sync::Arc<tokio::sync::Mutex<HashMap<u64, Vec<String>>>>,
+    msg: Message,
+    client_r: &ClientRoom,
+    client_id: &u64,
+) -> bool {
+    if let Message::Text(txt) = msg {
+        trace!("Received: {}", txt);
+
+        if txt.starts_with("-") {
+            if handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms).await {
+                warn!("Closing connection {}: group is closing...", client_id);
+            } else {
+                let _ = client_r.c.send(Message::Close(None));
+                warn!(
+                    "Closing connection {}: client was trying to close wrong group...",
+                    client_id
+                );
+            };
+
+            // let _ = client_r.c.send(Message::Close(None)); //tx.
+            return false;
+        } else if let Some(res) = handle_message(txt.to_string(), &configs) {
+            if !add_client_to_rg(
+                &rooms,
+                &clients,
+                res.room_config,
+                res.room_group.clone(),
+                client_r.clone(),
+            )
+            .await
+            {
+                let _ = client_r.c.send(Message::Close(None));
+                warn!(
+                    "Closing connection {}: error while connecting to invalid group...",
+                    client_id
+                );
+                return false;
+            }
+            broadcast_to_group(&rooms, &res.room_group.full_roomgroup, res.send_message).await;
+        } else {
+            warn!("Closing connection {}: unknown/invalid message", client_id);
+            let _ = client_r.c.send(Message::Close(None)); //tx.
+            return false;
+        }
+
+        // if txt.contains("new micasend message") {
+        //     println!("Broadcasting ping");
+
+        //     // Broadcast to all clients
+        //     let clients_guard = clients.lock().unwrap();
+        //     for client in clients_guard.iter() {
+        //         let _ = client
+        //             .c
+        //             .send(Message::Text("new message notification".to_string().into()));
+        //     }
+        // }
+    }
+    true
 }

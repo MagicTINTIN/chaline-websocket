@@ -1,10 +1,9 @@
 use anyhow::Context;
 use com::{
-    add_client_to_rg, broadcast_to_group, rm_client, ClientMap, ClientRoom, ServerMap, SharedM,
+    add_client_to_rg, rm_client, ClientMap, ClientRoom, ServerMap, SharedM,
 };
 use config_loader::RoomConfig;
 use futures::{SinkExt, StreamExt};
-use handler::{handle_group_destruction, handle_message};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -14,8 +13,9 @@ use tokio_rustls::rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKey
 use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::accept_async;
-use tokio_tungstenite::tungstenite::protocol::Message;
-use tracing::{error, info, trace, warn};
+use tracing::{error, info};
+
+use crate::handler::handle_raw_message;
 
 mod com;
 mod config_loader;
@@ -127,53 +127,7 @@ async fn main_without_tls() -> anyhow::Result<()> {
 
             // receiving messages from the client
             while let Some(Ok(msg)) = read.next().await {
-                if let Message::Text(txt) = msg {
-                    trace!("Received: {}", txt);
-
-                    if txt.starts_with("-") {
-                        if handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms)
-                            .await
-                        {
-                            warn!("Closing connection {}: group is closing...", client_id);
-                        } else {
-                            let _ = client_r.c.send(Message::Close(None));
-                            warn!(
-                                "Closing connection {}: client was trying to close wrong group...",
-                                client_id
-                            );
-                        };
-
-                        break;
-                    } else if let Some(res) = handle_message(txt.to_string(), &configs) {
-                        if !add_client_to_rg(
-                            &rooms,
-                            &clients,
-                            res.room_config,
-                            res.room_group.clone(),
-                            client_r.clone(),
-                        )
-                        .await
-                        {
-                            let _ = client_r.c.send(Message::Close(None));
-                            warn!(
-                                "Closing connection {}: error connecting to invalid group...",
-                                client_id
-                            );
-
-                            break;
-                        }
-                        broadcast_to_group(
-                            &rooms,
-                            &res.room_group.full_roomgroup,
-                            res.send_message,
-                        )
-                        .await;
-                    } else {
-                        warn!("Closing connection {}: unknown/invalid message", client_id);
-                        let _ = client_r.c.send(Message::Close(None)); //tx.
-                        break;
-                    }
-                }
+                handle_raw_message(configs, &rooms, &clients, msg, &client_r, &client_id).await;
             }
 
             info!("Socket connection ended");
@@ -266,64 +220,7 @@ async fn main_tls() -> anyhow::Result<()> {
 
             // receiving messages from the client
             while let Some(Ok(msg)) = read.next().await {
-                if let Message::Text(txt) = msg {
-                    trace!("Received: {}", txt);
-
-                    if txt.starts_with("-") {
-                        if handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms)
-                            .await
-                        {
-                            warn!("Closing connection {}: group is closing...", client_id);
-                        } else {
-                            let _ = client_r.c.send(Message::Close(None));
-                            warn!(
-                                "Closing connection {}: client was trying to close wrong group...",
-                                client_id
-                            );
-                        };
-
-                        // let _ = client_r.c.send(Message::Close(None)); //tx.
-                        break;
-                    } else if let Some(res) = handle_message(txt.to_string(), &configs) {
-                        if !add_client_to_rg(
-                            &rooms,
-                            &clients,
-                            res.room_config,
-                            res.room_group.clone(),
-                            client_r.clone(),
-                        )
-                        .await
-                        {
-                            let _ = client_r.c.send(Message::Close(None));
-                            warn!(
-                                "Closing connection {}: error while connecting to invalid group...",
-                                client_id
-                            );
-                            break;
-                        }
-                        broadcast_to_group(
-                            &rooms,
-                            &res.room_group.full_roomgroup,
-                            res.send_message,
-                        )
-                        .await;
-                    } else {
-                        warn!("Closing connection {}: unknown/invalid message", client_id);
-                        let _ = client_r.c.send(Message::Close(None)); //tx.
-                        break;
-                    }
-                    // if txt.contains("new micasend message") {
-                    //     println!("Broadcasting ping");
-
-                    //     // Broadcast to all clients
-                    //     let clients_guard = clients.lock().unwrap();
-                    //     for client in clients_guard.iter() {
-                    //         let _ = client
-                    //             .c
-                    //             .send(Message::Text("new message notification".to_string().into()));
-                    //     }
-                    // }
-                }
+                handle_raw_message(configs, &rooms, &clients, msg, &client_r, &client_id).await;
             }
 
             info!("Socket connection ended");
