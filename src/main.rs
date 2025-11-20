@@ -127,7 +127,7 @@ async fn main_without_tls() -> anyhow::Result<()> {
 
             // receiving messages from the client
             while let Some(Ok(msg)) = read.next().await {
-                handle_raw_message(configs, &rooms, &clients, msg, &client_r, &client_id).await;
+                if !handle_raw_message(configs, &rooms, &clients, msg, Some(&client_r)).await {break};
             }
 
             info!("Socket connection ended");
@@ -220,7 +220,7 @@ async fn main_tls() -> anyhow::Result<()> {
 
             // receiving messages from the client
             while let Some(Ok(msg)) = read.next().await {
-                handle_raw_message(configs, &rooms, &clients, msg, &client_r, &client_id).await;
+                if !handle_raw_message(configs, &rooms, &clients, msg, Some(&client_r)).await {break};
             }
 
             info!("Socket connection ended");

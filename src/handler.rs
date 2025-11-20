@@ -1,4 +1,7 @@
-use crate::{add_client_to_rg, com::broadcast_to_group};
+use crate::{
+    add_client_to_rg,
+    com::{broadcast_to_group, ClientMap},
+};
 use std::collections::HashMap;
 
 use tokio_tungstenite::tungstenite::Message;
@@ -95,10 +98,6 @@ pub struct WebSocketAction {
 }
 
 pub fn handle_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Option<WebSocketAction> {
-    // if msg.starts_with("-") {
-    //     return None;
-    // }
-
     let splitted_msg = split_message(msg, confs)?;
     let conf = confs.get(&splitted_msg.room_group.room)?;
 
@@ -125,49 +124,66 @@ pub fn handle_message(msg: String, confs: &HashMap<String, RoomConfig>) -> Optio
 
 pub async fn handle_raw_message(
     configs: &HashMap<String, RoomConfig>,
-    rooms: &std::sync::Arc<tokio::sync::Mutex<HashMap<String, crate::com::ServerRoom>>>,
-    clients: &std::sync::Arc<tokio::sync::Mutex<HashMap<u64, Vec<String>>>>,
+    rooms: &SharedM<ServerMap>,
+    clients: &SharedM<ClientMap>,
     msg: Message,
-    client_r: &ClientRoom,
-    client_id: &u64,
+    opt_client_r: Option<&ClientRoom>,
 ) -> bool {
     if let Message::Text(txt) = msg {
         trace!("Received: {}", txt);
 
         if txt.starts_with("-") {
             if handle_group_destruction(txt[1..txt.len()].to_string(), configs, &rooms).await {
-                warn!("Closing connection {}: group is closing...", client_id);
+                if let Some(client_r) = opt_client_r {
+                    warn!(
+                        "Closing connection {}: group is closing...",
+                        client_r.global_id
+                    );
+                } else {
+                    warn!(
+                        "Closing connection by HTTP-Push: group is closing...",
+                    );
+                }
             } else {
-                let _ = client_r.c.send(Message::Close(None));
-                warn!(
-                    "Closing connection {}: client was trying to close wrong group...",
-                    client_id
-                );
+                if let Some(client_r) = opt_client_r {
+                    let _ = client_r.c.send(Message::Close(None));
+                    warn!(
+                        "Closing connection {}: client was trying to close wrong group...",
+                        client_r.global_id
+                    );
+                }
             };
 
             // let _ = client_r.c.send(Message::Close(None)); //tx.
             return false;
         } else if let Some(res) = handle_message(txt.to_string(), &configs) {
-            if !add_client_to_rg(
-                &rooms,
-                &clients,
-                res.room_config,
-                res.room_group.clone(),
-                client_r.clone(),
-            )
-            .await
-            {
-                let _ = client_r.c.send(Message::Close(None));
-                warn!(
-                    "Closing connection {}: error while connecting to invalid group...",
-                    client_id
-                );
-                return false;
+            if let Some(client_r) = opt_client_r {
+                if !add_client_to_rg(
+                    &rooms,
+                    &clients,
+                    res.room_config,
+                    res.room_group.clone(),
+                    client_r.clone(),
+                )
+                .await
+                {
+                    let _ = client_r.c.send(Message::Close(None));
+                    warn!(
+                        "Closing connection {}: error while connecting to invalid group...",
+                        client_r.global_id
+                    );
+                    return false;
+                }
             }
             broadcast_to_group(&rooms, &res.room_group.full_roomgroup, res.send_message).await;
         } else {
-            warn!("Closing connection {}: unknown/invalid message", client_id);
-            let _ = client_r.c.send(Message::Close(None)); //tx.
+            if let Some(client_r) = opt_client_r {
+                warn!(
+                    "Closing connection {}: unknown/invalid message",
+                    client_r.global_id
+                );
+                let _ = client_r.c.send(Message::Close(None)); //tx.
+            }
             return false;
         }
 
