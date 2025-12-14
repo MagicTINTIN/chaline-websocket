@@ -146,10 +146,10 @@ async fn main_without_tls() -> anyhow::Result<()> {
             // remove the client from the shared list
             rm_client(&rooms, &clients, client_id).await;
 
+            drop(client_r.c);
+
             // wait for the send task to finish
             let _ = send_task.await;
-
-            drop(client_r.c);
         });
     }
 
@@ -254,11 +254,11 @@ async fn main_tls() -> anyhow::Result<()> {
             // remove the client from the shared list
             rm_client(&rooms, &clients, client_id).await;
 
-            // wait for the send task to finish
-            let _ = send_task.await;
-
             // release socket file
             drop(client_r.c);
+
+            // wait for the send task to finish
+            let _ = send_task.await;
         });
     }
 
