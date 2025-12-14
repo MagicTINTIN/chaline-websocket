@@ -1,7 +1,5 @@
 use anyhow::Context;
-use com::{
-    add_client_to_rg, rm_client, ClientMap, ClientRoom, ServerMap, SharedM,
-};
+use com::{add_client_to_rg, rm_client, ClientMap, ClientRoom, ServerMap, SharedM};
 use config_loader::RoomConfig;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
@@ -25,8 +23,7 @@ mod http_push;
 static GLOBAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn get_new_client_id() -> u64 {
-    // fetch_add provides atomic increment. No `unsafe` needed.
-    // Ordering specifies memory ordering constraints for concurrent access.
+    // atomic
     GLOBAL_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
@@ -84,7 +81,9 @@ async fn main_without_tls() -> anyhow::Result<()> {
     let http_rooms = rooms.clone();
     let http_clients = clients.clone();
     tokio::spawn(async move {
-        if let Err(e) = http_push::spawn_simple_push_listener(http_rooms, http_clients, "127.0.0.1:6442").await {
+        if let Err(e) =
+            http_push::spawn_simple_push_listener(http_rooms, http_clients, "127.0.0.1:6442").await
+        {
             tracing::error!("push listener failed: {:?}", e);
         }
     });
@@ -137,7 +136,9 @@ async fn main_without_tls() -> anyhow::Result<()> {
 
             // receiving messages from the client
             while let Some(Ok(msg)) = read.next().await {
-                if !handle_raw_message(configs, &rooms, &clients, msg, Some(&client_r)).await {break};
+                if !handle_raw_message(configs, &rooms, &clients, msg, Some(&client_r)).await {
+                    break;
+                };
             }
 
             info!("Socket connection ended");
@@ -147,6 +148,8 @@ async fn main_without_tls() -> anyhow::Result<()> {
 
             // wait for the send task to finish
             let _ = send_task.await;
+
+            drop(client_r.c);
         });
     }
 
@@ -175,7 +178,9 @@ async fn main_tls() -> anyhow::Result<()> {
     let http_rooms = rooms.clone();
     let http_clients = clients.clone();
     tokio::spawn(async move {
-        if let Err(e) = http_push::spawn_simple_push_listener(http_rooms, http_clients, "127.0.0.1:6442").await {
+        if let Err(e) =
+            http_push::spawn_simple_push_listener(http_rooms, http_clients, "127.0.0.1:6442").await
+        {
             tracing::error!("push listener failed: {:?}", e);
         }
     });
@@ -239,7 +244,9 @@ async fn main_tls() -> anyhow::Result<()> {
 
             // receiving messages from the client
             while let Some(Ok(msg)) = read.next().await {
-                if !handle_raw_message(configs, &rooms, &clients, msg, Some(&client_r)).await {break};
+                if !handle_raw_message(configs, &rooms, &clients, msg, Some(&client_r)).await {
+                    break;
+                };
             }
 
             info!("Socket connection ended");
@@ -249,6 +256,9 @@ async fn main_tls() -> anyhow::Result<()> {
 
             // wait for the send task to finish
             let _ = send_task.await;
+
+            // release socket file
+            drop(client_r.c);
         });
     }
 
